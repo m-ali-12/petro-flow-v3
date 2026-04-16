@@ -212,7 +212,7 @@
         window.auth.updatePumpDetails(pumpDetails);
 
         // Update user metadata
-        const { error } = await supabase.auth.updateUser({
+        const { error: authError } = await supabase.auth.updateUser({
           data: {
             pump_name: pumpDetails.name,
             full_name: pumpDetails.owner,
@@ -223,7 +223,18 @@
           }
         });
 
-        if (error) throw error;
+        if (authError) throw authError;
+
+        // ✅ SYNC WITH companies TABLE (Multi-tenant)
+        const userProfile = window.currentUserProfile;
+        if (userProfile?.company_id) {
+          const { error: dbError } = await supabase
+            .from('companies')
+            .update({ name: pumpDetails.name })
+            .eq('id', userProfile.company_id);
+          
+          if (dbError) console.warn('Company table sync failed (permissions?):', dbError.message);
+        }
 
         showToast('Profile updated successfully!', 'success');
         setTimeout(() => location.reload(), 1500);
