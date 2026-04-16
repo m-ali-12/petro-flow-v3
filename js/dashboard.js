@@ -53,6 +53,14 @@ async function initDashboard() {
 // =============================================
 async function loadStockData() {
     try {
+        // RLS requires an active auth session — wait for it
+        const { data: { session } } = await window.supabaseClient.auth.getSession();
+        if (!session) {
+            console.warn('loadStockData: no session yet, skipping');
+            setStockDisplay(0, 0);
+            return;
+        }
+
         const { data, error } = await window.supabaseClient
             .from('tanks')
             .select('*');
@@ -85,6 +93,10 @@ async function loadStockData() {
 // =============================================
 async function loadTodaySummary() {
     try {
+        // RLS requires an active auth session
+        const { data: { session } } = await window.supabaseClient.auth.getSession();
+        if (!session) { setSummaryDisplay(0, 0, 0); return; }
+
         const today = new Date().toISOString().split('T')[0];
         
         const { data, error } = await window.supabaseClient

@@ -492,23 +492,43 @@
 
   <script>
     // Quick stock levels for dashboard card
+    // Must wait for auth session before querying (RLS requires authenticated user)
     async function loadQuickStock() {
-      function tryLoad() {
-        if (!window.supabaseClient) { setTimeout(tryLoad, 200); return; }
-        window.supabaseClient
+      async function tryLoad(attempts) {
+        if (attempts <= 0) return; // give up after timeout
+
+        // Wait for supabaseClient
+        if (!window.supabaseClient) {
+          setTimeout(() => tryLoad(attempts - 1), 200);
+          return;
+        }
+
+        // Wait for valid auth session (RLS blocks unauthenticated queries)
+        try {
+          const { data: { session } } = await window.supabaseClient.auth.getSession();
+          if (!session) {
+            setTimeout(() => tryLoad(attempts - 1), 300);
+            return;
+          }
+        } catch (e) {
+          setTimeout(() => tryLoad(attempts - 1), 300);
+          return;
+        }
+
+        // Now safe to query with RLS
+        const { data } = await window.supabaseClient
           .from('tanks')
-          .select('fuel_type, current_stock')
-          .then(({ data }) => {
-            if (!data) return;
-            const petrol = data.find(t => t.fuel_type === 'Petrol');
-            const diesel = data.find(t => t.fuel_type === 'Diesel');
-            const pEl = document.getElementById('quick-petrol');
-            const dEl = document.getElementById('quick-diesel');
-            if (pEl && petrol) pEl.textContent = parseInt(petrol.current_stock).toLocaleString() + ' L';
-            if (dEl && diesel) dEl.textContent = parseInt(diesel.current_stock).toLocaleString() + ' L';
-          });
+          .select('fuel_type, current_stock');
+
+        if (!data) return;
+        const petrol = data.find(t => t.fuel_type === 'Petrol');
+        const diesel = data.find(t => t.fuel_type === 'Diesel');
+        const pEl = document.getElementById('quick-petrol');
+        const dEl = document.getElementById('quick-diesel');
+        if (pEl && petrol) pEl.textContent = parseInt(petrol.current_stock).toLocaleString() + ' L';
+        if (dEl && diesel) dEl.textContent = parseInt(diesel.current_stock).toLocaleString() + ' L';
       }
-      tryLoad();
+      tryLoad(30); // 30 attempts × ~300ms = up to 9 seconds wait
     }
     document.addEventListener('DOMContentLoaded', loadQuickStock);
   </script>

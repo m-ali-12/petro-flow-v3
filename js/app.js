@@ -194,6 +194,10 @@
       const sb = getSupabase();
       if (!sb) { showToast("Database not ready", "error"); return; }
 
+      // RLS requires an active auth session — verify before querying
+      const { data: { session } } = await sb.auth.getSession();
+      if (!session) { console.warn('loadTanks: no session'); return; }
+
       const { data, error } = await sb.from("tanks").select("*").order("id");
       if (error) throw error;
       tanksCache = data || [];
