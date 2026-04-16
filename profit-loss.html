@@ -392,7 +392,7 @@
         // ── Query 1: Petrol/Diesel Transactions ──────────────────
         let txQ = sb
           .from('transactions')
-          .select('id, transaction_type, charges, description, created_at, expense_type, fuel_type, customers(name, sr_no)')
+          .select('id, transaction_type, charges, description, created_at, expense_type, fuel_type, customer_id')
           .gte('created_at', fromISO)
           .lte('created_at', toISO)
           .order('created_at', { ascending: false });
@@ -415,7 +415,7 @@
         // ── Query 3: Cash Advances ───────────────────────────────
         let advQ = sb
           .from('cash_advances')
-          .select('id, amount, reason, advance_date, status, customers(name, sr_no)')
+          .select('id, amount, reason, advance_date, status, customer_id')
           .gte('advance_date', fromStr)
           .lte('advance_date', toStr)
           .order('advance_date', { ascending: false });
@@ -423,9 +423,22 @@
         const { data: advances, error: advErr } = await advQ;
         console.log('Advances:', advances?.length, 'Error:', advErr);
 
+        // ── Manual customer name lookup (no FK joins needed) ─────
+        const custIds = new Set();
+        (txns||[]).forEach(t => t.customer_id && custIds.add(t.customer_id));
+        (advances||[]).forEach(a => a.customer_id && custIds.add(a.customer_id));
+        let custMap = {}; // id → {name, sr_no}
+        if (custIds.size > 0) {
+          const { data: custs } = await sb.from('customers')
+            .select('id, name, sr_no')
+            .in('id', [...custIds]);
+          (custs||[]).forEach(c => { custMap[c.id] = c; });
+        }
+
         STATE.txns       = txns       || [];
         STATE.mobilSales = mobilSales || [];
         STATE.advances   = advances   || [];
+        STATE.custMap    = custMap;
 
         const totalRecs = STATE.txns.length + STATE.mobilSales.length;
 
@@ -807,7 +820,7 @@
             date: t.created_at,
             src, srcClass,
             desc: t.description || t.expense_type || '—',
-            customer: t.customers?.name || '—',
+            customer: (STATE.custMap?.[t.customer_id]?.name) || '—',
             amount: parseFloat(t.charges) || 0,
             typeLabel, typeClass, isIncome
           });
@@ -892,7 +905,7 @@
         cleared: '<span class="badge" style="background:#d4edda;color:#155724;">Cleared</span>',
       };
       el('advance-tbody').innerHTML = STATE.advances.map(a => `<tr>
-        <td><strong>${a.customers?.name||'N/A'}</strong> <small class="text-muted">(#${a.customers?.sr_no||'-'})</small></td>
+        <td><strong>${STATE.custMap?.[a.customer_id]?.name||'N/A'}</strong> <small class="text-muted">(#${STATE.custMap?.[a.customer_id]?.sr_no||'-'})</small></td>
         <td>${fmtDate(a.advance_date)}</td>
         <td class="text-end fw-bold" style="color:#8e44ad">Rs.${fmt(a.amount)}</td>
         <td>${a.reason||'—'}</td>
@@ -1003,7 +1016,7 @@
       STATE.txns.forEach(t => rows.push([
         fmtDate(t.created_at), t.transaction_type,
         (t.description||t.expense_type||'').replace(/,/g,' '),
-        t.customers?.name||'N/A', t.charges||0, t.transaction_type
+        (STATE.custMap?.[t.customer_id]?.name)||'N/A', t.charges||0, t.transaction_type
       ]));
       STATE.mobilSales.forEach(m => rows.push([
         fmtDate(m.sale_date), 'Mobil Oil',
