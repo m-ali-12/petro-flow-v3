@@ -200,6 +200,21 @@
     window.location.href = 'login.html';
   };
 
+  // ── Pump Profile Helpers ─────────────────────────────────────
+  window.auth = window.auth || {};
+  window.auth.getPumpDetails = () => {
+    const d = localStorage.getItem('pf_pump_details');
+    return d ? JSON.parse(d) : { name: 'Khalid & Sons', owner: 'Super Admin', city: 'Punjab', address: '' };
+  };
+  window.auth.updatePumpDetails = (details) => {
+    localStorage.setItem('pf_pump_details', JSON.stringify(details));
+  };
+  window.auth.getCurrentUser = async () => {
+    const { data } = await window.supabaseClient.auth.getUser();
+    return data?.user || window.currentUser;
+  };
+  window.auth.logout = window.handleLogout;
+
   window.hasPermission = perm => !!(window.userPermissions && window.userPermissions[perm]);
   window.isRole = (...roles) => roles.includes(window.userRole);
 

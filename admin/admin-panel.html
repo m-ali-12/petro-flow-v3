@@ -213,7 +213,17 @@
     const { data, error } = await sb.from('user_profiles').select('*').order('created_at', { ascending: false });
     if (error) { toast('Error loading users: ' + error.message, 'danger'); return; }
 
-    allUsers = data || [];
+    // ROLLE-BASED FILTERING: Hide superior roles from Junior Admins
+    if (window.userRole === 'admin') {
+      // Admins only see Managers, Employees, and self
+      allUsers = (data || []).filter(u => 
+        ['manager', 'employee'].includes(u.role) || u.user_id === window.currentUser.id
+      );
+    } else {
+      // Super Admins see everyone
+      allUsers = data || [];
+    }
+    
     updateStats();
     renderPending();
     renderActive();
@@ -351,9 +361,27 @@
     document.getElementById('edit-user-name').textContent = `${u.full_name || '—'} (${u.email || ''})`;
     document.getElementById('edit-role').value   = u.role || 'employee';
     document.getElementById('edit-status').value = u.status || 'pending';
-    // Only super_admin can assign super_admin role
-    document.getElementById('super-admin-option').style.display =
-      window.userRole === 'super_admin' ? 'block' : 'none';
+
+    // Role restrictions for the dropdown
+    const roleSelect = document.getElementById('edit-role');
+    const superAdminOpt = document.getElementById('super-admin-option');
+    const adminOpt      = roleSelect.querySelector('option[value="admin"]');
+
+    if (window.userRole === 'super_admin') {
+      superAdminOpt.style.display = 'block';
+      if (adminOpt) adminOpt.style.display = 'block';
+    } else {
+      // Junior Admin can only assign Manager or Employee
+      superAdminOpt.style.display = 'none';
+      if (adminOpt) adminOpt.style.display = 'none';
+      
+      // If the user's current role is admin or higher (shouldn't happen with filtering, but for safety), 
+      // don't let them change it.
+      if (['super_admin', 'admin'].includes(u.role) && u.user_id !== window.currentUser.id) {
+        toast('You cannot edit this level of user.', 'danger');
+        return;
+      }
+    }
     new bootstrap.Modal(document.getElementById('editRoleModal')).show();
   }
 
@@ -361,9 +389,11 @@
     const userId = document.getElementById('edit-user-id').value;
     const role   = document.getElementById('edit-role').value;
     const status = document.getElementById('edit-status').value;
-    // Guard: only super_admin can assign super_admin
-    if (role === 'super_admin' && window.userRole !== 'super_admin') {
-      toast('Only Super Admin can assign Super Admin role.', 'danger'); return;
+    
+    // Safety check for role escalation
+    if (['super_admin', 'admin'].includes(role) && window.userRole !== 'super_admin') {
+      toast('You are not authorized to assign Admin roles.', 'danger'); 
+      return;
     }
     const update = { role, status };
     if (status === 'active') { update.approved_by = window.currentUser.id; update.approved_at = new Date().toISOString(); }
