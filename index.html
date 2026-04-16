@@ -65,39 +65,43 @@
       <!-- Fuel Stock Cards -->
       <div class="row g-4 mb-4">
         <div class="col-md-6">
-          <div class="card stat-card petrol-card shadow-sm">
-            <div class="card-body">
-              <div class="d-flex justify-content-between align-items-center">
+          <div class="card stat-card petrol-card shadow">
+            <div class="card-body py-4">
+              <div class="d-flex justify-content-between align-items-start">
                 <div>
-                  <h6 class="text-muted mb-2">Petrol Stock</h6>
-                  <h2 class="mb-0 fw-bold" id="petrol-stock">0</h2>
-                  <small class="text-muted">Liters</small>
+                  <h6 class="text-white-50 mb-1 small fw-semibold text-uppercase tracking-wide">Petrol Stock</h6>
+                  <h2 class="mb-1 fw-bold" id="petrol-stock">0</h2>
+                  <small style="color:rgba(255,255,255,0.55)">Liters Available</small>
                 </div>
-                <div class="stat-icon petrol-icon"><i class="bi bi-droplet-fill"></i></div>
+                <div class="stat-card-icon"><i class="bi bi-droplet-fill"></i></div>
               </div>
-              <div class="progress mt-3" style="height:8px;">
-                <div id="petrol-progress" class="progress-bar bg-success" style="width:0%"></div>
+              <div class="progress mt-3" style="height:6px;">
+                <div id="petrol-progress" class="progress-bar" style="width:0%;border-radius:3px;"></div>
               </div>
-              <small class="text-muted mt-2 d-block">Capacity: <span id="petrol-capacity">0</span> L</small>
+              <small style="color:rgba(255,255,255,0.45)" class="mt-2 d-block">
+                Tank Capacity: <span id="petrol-capacity">25,000</span> L
+              </small>
             </div>
           </div>
         </div>
 
         <div class="col-md-6">
-          <div class="card stat-card diesel-card shadow-sm">
-            <div class="card-body">
-              <div class="d-flex justify-content-between align-items-center">
+          <div class="card stat-card diesel-card shadow">
+            <div class="card-body py-4">
+              <div class="d-flex justify-content-between align-items-start">
                 <div>
-                  <h6 class="text-muted mb-2">Diesel Stock</h6>
-                  <h2 class="mb-0 fw-bold" id="diesel-stock">0</h2>
-                  <small class="text-muted">Liters</small>
+                  <h6 class="text-white-50 mb-1 small fw-semibold text-uppercase tracking-wide">Diesel Stock</h6>
+                  <h2 class="mb-1 fw-bold" id="diesel-stock">0</h2>
+                  <small style="color:rgba(255,255,255,0.55)">Liters Available</small>
                 </div>
-                <div class="stat-icon diesel-icon"><i class="bi bi-droplet-fill"></i></div>
+                <div class="stat-card-icon"><i class="bi bi-droplet-fill"></i></div>
               </div>
-              <div class="progress mt-3" style="height:8px;">
-                <div id="diesel-progress" class="progress-bar bg-warning" style="width:0%"></div>
+              <div class="progress mt-3" style="height:6px;">
+                <div id="diesel-progress" class="progress-bar" style="width:0%;border-radius:3px;"></div>
               </div>
-              <small class="text-muted mt-2 d-block">Capacity: <span id="diesel-capacity">0</span> L</small>
+              <small style="color:rgba(255,255,255,0.45)" class="mt-2 d-block">
+                Tank Capacity: <span id="diesel-capacity">25,000</span> L
+              </small>
             </div>
           </div>
         </div>
@@ -106,50 +110,50 @@
       <!-- Today's Summary -->
       <div class="row g-3 mb-4">
         <div class="col-12">
-          <h5 class="mb-3"><i class="bi bi-calendar-day me-2"></i>Today's Summary</h5>
+          <h5 class="mb-3 fw-bold"><i class="bi bi-calendar-day me-2 text-primary"></i>Today's Summary</h5>
         </div>
-        
-        <div class="col-md-3">
-          <div class="card shadow-sm border-success">
-            <div class="card-body text-center">
-              <i class="bi bi-cash-stack text-success" style="font-size: 2rem;"></i>
-              <h6 class="mt-2 text-muted">Total Sales</h6>
-              <h4 id="today-sales">Rs. 0</h4>
-              <small class="text-muted" id="today-sales-count">0 transactions</small>
+
+        <div class="col-md-3 col-6">
+          <div class="metric-card green">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <div class="metric-icon green"><i class="bi bi-cash-stack"></i></div>
+              <small class="text-muted fw-semibold">SALES</small>
             </div>
+            <h4 class="fw-bold mb-0 text-success" id="today-sales">Rs. 0</h4>
+            <small class="text-muted" id="today-sales-count">0 transactions</small>
           </div>
         </div>
 
-        <div class="col-md-3">
-          <div class="card shadow-sm border-primary">
-            <div class="card-body text-center">
-              <i class="bi bi-wallet2 text-primary" style="font-size: 2rem;"></i>
-              <h6 class="mt-2 text-muted">Vasooli</h6>
-              <h4 id="today-vasooli">Rs. 0</h4>
-              <small class="text-muted">Collections</small>
+        <div class="col-md-3 col-6">
+          <div class="metric-card blue">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <div class="metric-icon blue"><i class="bi bi-wallet2"></i></div>
+              <small class="text-muted fw-semibold">VASOOLI</small>
             </div>
+            <h4 class="fw-bold mb-0 text-info" id="today-vasooli">Rs. 0</h4>
+            <small class="text-muted">Collections today</small>
           </div>
         </div>
 
-        <div class="col-md-3">
-          <div class="card shadow-sm border-danger">
-            <div class="card-body text-center">
-              <i class="bi bi-bag-x text-danger" style="font-size: 2rem;"></i>
-              <h6 class="mt-2 text-muted">Expenses</h6>
-              <h4 id="today-expenses">Rs. 0</h4>
-              <small class="text-muted">Today's costs</small>
+        <div class="col-md-3 col-6">
+          <div class="metric-card red">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <div class="metric-icon red"><i class="bi bi-bag-x"></i></div>
+              <small class="text-muted fw-semibold">EXPENSES</small>
             </div>
+            <h4 class="fw-bold mb-0 text-danger" id="today-expenses">Rs. 0</h4>
+            <small class="text-muted">Today's costs</small>
           </div>
         </div>
 
-        <div class="col-md-3">
-          <div class="card shadow-sm border-info">
-            <div class="card-body text-center">
-              <i class="bi bi-graph-up text-info" style="font-size: 2rem;"></i>
-              <h6 class="mt-2 text-muted">Net Cash</h6>
-              <h4 id="today-net">Rs. 0</h4>
-              <small class="text-muted">Sales + Vasooli - Expenses</small>
+        <div class="col-md-3 col-6">
+          <div class="metric-card yellow">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <div class="metric-icon yellow"><i class="bi bi-graph-up-arrow"></i></div>
+              <small class="text-muted fw-semibold">NET CASH</small>
             </div>
+            <h4 class="fw-bold mb-0" style="color:var(--warning)" id="today-net">Rs. 0</h4>
+            <small class="text-muted">Sales + Vasooli - Exp</small>
           </div>
         </div>
       </div>

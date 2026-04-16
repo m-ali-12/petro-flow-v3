@@ -1,75 +1,435 @@
+/* ═══════════════════════════════════════════════════════════
+   PetroFlow — Premium Global Design System
+   ═══════════════════════════════════════════════════════════ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+/* ── CSS Variables ─────────────────────────────────────── */
+:root {
+  --primary:       #667eea;
+  --primary-dark:  #5a67d8;
+  --secondary:     #764ba2;
+  --success:       #10b981;
+  --danger:        #ef4444;
+  --warning:       #f59e0b;
+  --info:          #3b82f6;
+  --dark:          #0f172a;
+  --surface:       #ffffff;
+  --surface-2:     #f8fafc;
+  --border:        #e2e8f0;
+  --text:          #1e293b;
+  --text-muted:    #64748b;
+  --shadow-sm:     0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.04);
+  --shadow:        0 4px 16px rgba(0,0,0,.08), 0 2px 6px rgba(0,0,0,.04);
+  --shadow-lg:     0 10px 40px rgba(0,0,0,.12), 0 4px 12px rgba(0,0,0,.06);
+  --radius:        12px;
+  --radius-sm:     8px;
+  --radius-lg:     16px;
+  --gradient:      linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --gradient-green:linear-gradient(135deg, #10b981 0%, #059669 100%);
+  --gradient-dark: linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #0f2d1e 100%);
+}
+
+/* ── Base ──────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
 body {
-  font-family: 'Poppins', sans-serif;
-  background: #f8fafc;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background: #f1f5f9;
+  color: var(--text);
+  font-size: 0.9rem;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
 }
 
-h1 {
-  font-size: 2rem;
+/* ── Main wrapper ──────────────────────────────────────── */
+.main-wrapper {
+  min-height: calc(100vh - 56px);
 }
 
+/* ── Premium Cards ─────────────────────────────────────── */
 .card {
-  border-radius: 15px;
-  transition: 0.3s ease;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  background: var(--surface);
+  transition: box-shadow 0.25s ease, transform 0.25s ease;
 }
 
 .card:hover {
-  transform: translateY(-5px);
+  box-shadow: var(--shadow);
 }
 
+.card-header {
+  border-radius: var(--radius) var(--radius) 0 0 !important;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+}
+
+.card-footer {
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 var(--radius) var(--radius) !important;
+}
+
+/* ── Stat Cards ────────────────────────────────────────── */
+.stat-card {
+  border: none !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: var(--shadow) !important;
+  overflow: hidden;
+  position: relative;
+  cursor: default;
+}
+
+.stat-card::before {
+  content: '';
+  position: absolute;
+  top: -30px; right: -30px;
+  width: 100px; height: 100px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.07);
+}
+
+.stat-card::after {
+  content: '';
+  position: absolute;
+  bottom: -20px; left: 20%;
+  width: 80px; height: 80px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.05);
+}
+
+.stat-card-icon {
+  width: 52px; height: 52px;
+  border-radius: var(--radius);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.5rem;
+  flex-shrink: 0;
+  backdrop-filter: blur(6px);
+}
+
+/* ── Petrol / Diesel cards ─────────────────────────────── */
+.petrol-card {
+  background: linear-gradient(135deg, #0f2027, #203a43, #1a5276) !important;
+  color: white !important;
+}
+.petrol-card h6, .petrol-card small { color: rgba(255,255,255,0.7) !important; }
+.petrol-card h2 { color: white !important; }
+.petrol-card .progress { background: rgba(255,255,255,0.15); }
+.petrol-card .progress-bar { background: #22c55e !important; }
+.petrol-card .stat-card-icon { background: rgba(34,197,94,0.2); color: #4ade80; border: 1px solid rgba(34,197,94,0.3);}
+
+.diesel-card {
+  background: linear-gradient(135deg, #1a1a2e, #16213e, #0f3460) !important;
+  color: white !important;
+}
+.diesel-card h6, .diesel-card small { color: rgba(255,255,255,0.7) !important; }
+.diesel-card h2 { color: white !important; }
+.diesel-card .progress { background: rgba(255,255,255,0.15); }
+.diesel-card .progress-bar { background: #f59e0b !important; }
+.diesel-card .stat-card-icon { background: rgba(245,158,11,0.2); color: #fbbf24; border: 1px solid rgba(245,158,11,0.3); }
+
+/* ── Summary metric cards ─────────────────────────────── */
+.metric-card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  padding: 1.2rem;
+  transition: all 0.25s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.metric-card::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 4px; height: 100%;
+  border-radius: 4px 0 0 4px;
+}
+
+.metric-card.green::after  { background: var(--success); }
+.metric-card.blue::after   { background: var(--info); }
+.metric-card.red::after    { background: var(--danger); }
+.metric-card.yellow::after { background: var(--warning); }
+
+.metric-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow);
+}
+
+.metric-icon {
+  width: 44px; height: 44px;
+  border-radius: var(--radius-sm);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.3rem;
+}
+.metric-icon.green  { background: rgba(16,185,129,0.1); color: var(--success); }
+.metric-icon.blue   { background: rgba(59,130,246,0.1); color: var(--info); }
+.metric-icon.red    { background: rgba(239,68,68,0.1);  color: var(--danger); }
+.metric-icon.yellow { background: rgba(245,158,11,0.1); color: var(--warning); }
+
+/* ── Buttons ───────────────────────────────────────────── */
+.btn {
+  border-radius: var(--radius-sm);
+  font-weight: 500;
+  font-size: 0.85rem;
+  transition: all 0.2s ease;
+  display: inline-flex; align-items: center; gap: 4px;
+}
+
+.btn:hover { transform: translateY(-1px); }
+.btn:active { transform: translateY(0); }
+
+.btn-primary {
+  background: var(--gradient);
+  border: none;
+  box-shadow: 0 4px 12px rgba(102,126,234,0.35);
+}
+.btn-primary:hover {
+  background: linear-gradient(135deg, #5a67d8, #6b3fa0);
+  box-shadow: 0 6px 18px rgba(102,126,234,0.45);
+}
+
+.btn-success {
+  background: var(--gradient-green);
+  border: none;
+  box-shadow: 0 4px 12px rgba(16,185,129,0.3);
+}
+
+/* ── Tables ────────────────────────────────────────────── */
+.table {
+  font-size: 0.85rem;
+}
+.table thead th {
+  font-weight: 600;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: none;
+  padding: 10px 12px;
+}
+.table tbody td {
+  padding: 10px 12px;
+  vertical-align: middle;
+  border-bottom: 1px solid #f1f5f9;
+}
+.table-hover tbody tr:hover {
+  background: #f8fafc;
+}
+
+/* ── Forms ─────────────────────────────────────────────── */
+.form-control, .form-select {
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  font-size: 0.875rem;
+  padding: 0.5rem 0.75rem;
+  transition: all 0.2s ease;
+}
+.form-control:focus, .form-select:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(102,126,234,0.15);
+}
+
+.input-group-text {
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border-color: var(--border);
+  font-size: 0.875rem;
+}
+
+/* ── Badges ────────────────────────────────────────────── */
+.badge {
+  font-weight: 600;
+  font-size: 0.72rem;
+  border-radius: 6px;
+  padding: 0.35em 0.65em;
+  letter-spacing: 0.2px;
+}
+
+/* ── Balance colors ────────────────────────────────────── */
+.balance-positive { color: #ef4444; font-weight: 600; }
+.balance-negative { color: #10b981; font-weight: 600; }
+.balance-zero     { color: #94a3b8; }
+
+/* ── Stock featured card (dashboard) ──────────────────── */
+.stock-featured-card {
+  background: var(--gradient-dark);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem 1.8rem;
+  color: white;
+  box-shadow: var(--shadow-lg);
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+  text-decoration: none;
+  display: block;
+}
+.stock-featured-card::before {
+  content: '';
+  position: absolute;
+  top: -60px; right: -60px;
+  width: 220px; height: 220px;
+  background: radial-gradient(circle, rgba(255,255,255,0.07) 0%, transparent 70%);
+  border-radius: 50%;
+}
+.stock-featured-card::after {
+  content: '';
+  position: absolute;
+  bottom: -50px; left: 30%;
+  width: 160px; height: 160px;
+  background: radial-gradient(circle, rgba(255,255,255,0.04) 0%, transparent 70%);
+  border-radius: 50%;
+}
+.stock-featured-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 18px 48px rgba(10,37,64,0.5);
+  color: white;
+}
+.stock-fuel-icon {
+  width: 60px; height: 60px;
+  background: rgba(255,255,255,0.12);
+  border-radius: var(--radius);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.8rem;
+  flex-shrink: 0;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255,255,255,0.15);
+}
+.stock-featured-label {
+  font-size: 0.65rem;
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.5);
+  margin-bottom: 3px;
+}
+.stock-featured-title { font-size: 1.1rem; font-weight: 700; color: white; margin-bottom: 3px; }
+.stock-featured-sub { font-size: 0.76rem; color: rgba(255,255,255,0.45); }
+.stock-pill {
+  padding: 5px 14px;
+  border-radius: 20px;
+  font-size: 0.78rem;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.petrol-pill {
+  background: rgba(34,197,94,0.18);
+  color: #6ee7b7;
+  border: 1px solid rgba(34,197,94,0.28);
+}
+.diesel-pill {
+  background: rgba(251,191,36,0.18);
+  color: #fde68a;
+  border: 1px solid rgba(251,191,36,0.28);
+}
+.stock-arrow-btn { font-size: 1.8rem; color: rgba(255,255,255,0.35); transition: all 0.3s; }
+.stock-featured-card:hover .stock-arrow-btn { color: white; transform: translateX(5px); }
+
+/* ── Welcome card ──────────────────────────────────────── */
+.welcome-card {
+  background: var(--gradient);
+  padding: 1.8rem 2rem;
+  border-radius: var(--radius-lg);
+  color: white;
+  box-shadow: 0 6px 24px rgba(102,126,234,0.35);
+  position: relative;
+  overflow: hidden;
+}
+.welcome-card::before {
+  content: '';
+  position: absolute;
+  top: -40px; right: -40px;
+  width: 180px; height: 180px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.07);
+}
+.welcome-card h3 { margin-bottom: 0.4rem; font-weight: 700; }
+.welcome-card p { opacity: 0.85; margin-bottom: 0; }
+
+/* ── FAB Stock button ──────────────────────────────────── */
+.fab-stock {
+  position: fixed; bottom: 24px; right: 24px; z-index: 1000;
+  background: var(--gradient-dark);
+  color: white;
+  border-radius: 50px;
+  padding: 12px 20px;
+  display: flex; align-items: center; gap: 10px;
+  text-decoration: none;
+  font-weight: 600; font-size: 0.875rem;
+  box-shadow: 0 6px 24px rgba(10,37,64,0.5);
+  transition: all 0.3s ease;
+  border: none;
+}
+.fab-stock:hover {
+  color: white;
+  transform: translateY(-3px) scale(1.03);
+  box-shadow: 0 12px 32px rgba(10,37,64,0.6);
+}
+.fab-icon {
+  width: 30px; height: 30px;
+  background: rgba(255,255,255,0.15);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.95rem;
+}
+.fab-pulse {
+  width: 9px; height: 9px;
+  background: #22c55e;
+  border-radius: 50%;
+  animation: pulse 2s infinite;
+  flex-shrink: 0;
+}
+@keyframes pulse {
+  0%, 100% { opacity:1; transform:scale(1); }
+  50% { opacity:0.55; transform:scale(1.45); }
+}
+
+/* ── Modal polish ──────────────────────────────────────── */
+.modal-content { border-radius: var(--radius-lg); border: none; box-shadow: var(--shadow-lg); }
+.modal-header  { border-radius: var(--radius-lg) var(--radius-lg) 0 0 !important; }
+.modal-footer  { border-radius: 0 0 var(--radius-lg) var(--radius-lg) !important; }
+
+/* ── Page header section ───────────────────────────────── */
+.page-hero {
+  background: var(--gradient);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem 2rem;
+  color: white;
+  margin-bottom: 1.5rem;
+  box-shadow: 0 6px 24px rgba(102,126,234,0.3);
+}
+.page-hero h4 { font-weight: 700; margin-bottom: 0.25rem; }
+.page-hero p { opacity: 0.85; margin-bottom: 0; font-size: 0.875rem; }
+
+/* ── Toast ─────────────────────────────────────────────── */
+.toast {
+  border-radius: var(--radius);
+  border: none;
+  box-shadow: var(--shadow-lg);
+}
+
+/* ── Scrollbar ─────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--surface-2); }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* ── Animations ────────────────────────────────────────── */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.card, .metric-card, .stat-card { animation: fadeIn 0.35s ease both; }
+
+/* ── Responsive ────────────────────────────────────────── */
 @media (max-width: 768px) {
-  h1 {
-    font-size: 1.5rem;
-  }
-
-  .card {
-    padding: 1rem !important;
-  }
-}
-
-/* ==============================
-   FORCE ANIMATED SCROLLBAR
-============================== */
-
-/* Apply to whole page */
-html {
-  scroll-behavior: smooth;
-}
-
-/* Chrome / Edge / Brave */
-html::-webkit-scrollbar,
-body::-webkit-scrollbar {
-  width: 14px;
-}
-
-html::-webkit-scrollbar-track,
-body::-webkit-scrollbar-track {
-  background: #eef2f7;
-  border-radius: 10px;
-}
-
-html::-webkit-scrollbar-thumb,
-body::-webkit-scrollbar-thumb {
-  background: linear-gradient(270deg, #2563eb, #7c3aed, #2563eb);
-  background-size: 400% 400%;
-  border-radius: 10px;
-  animation: scrollbarFlow 5s linear infinite;
-  border: 3px solid #eef2f7;
-}
-
-/* Hover effect */
-html::-webkit-scrollbar-thumb:hover,
-body::-webkit-scrollbar-thumb:hover {
-  box-shadow: 0 0 12px #7c3aed;
-}
-
-/* Animation */
-@keyframes scrollbarFlow {
-  0% { background-position: 0% 50%; }
-  100% { background-position: 400% 50%; }
-}
-
-/* Firefox */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: #7c3aed #eef2f7;
+  .stock-featured-card { padding: 1.2rem; }
+  .stock-pill { display: none; }
+  .fab-stock .fab-text { display: none; }
+  .fab-stock { padding: 13px; border-radius: 50%; }
+  .welcome-card { padding: 1.2rem; }
+  body { font-size: 0.85rem; }
 }
