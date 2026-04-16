@@ -89,23 +89,23 @@
   // =============================
   async function loadComponent(placeholderId, url) {
     const ph = $(placeholderId);
-    if (!ph) {
-      console.warn(`Placeholder ${placeholderId} not found`);
-      return false;
-    }
+    if (!ph) return false;
+
+    // Ensure component URL is always relative to site root for subfolder support
+    const componentUrl = url.startsWith('/') ? url : '/' + url;
 
     try {
-      const res = await fetch(url, { cache: "no-store" });
+      const res = await fetch(componentUrl, { cache: "no-store" });
       if (!res.ok) {
-        console.error(`Failed to load ${url}: ${res.status} ${res.statusText}`);
+        console.error(`Failed to load ${componentUrl}: ${res.status} ${res.statusText}`);
         return false;
       }
       const html = await res.text();
       ph.innerHTML = html;
-      console.log(`✅ Loaded: ${url}`);
+      console.log(`✅ Loaded: ${componentUrl}`);
       return true;
     } catch (error) {
-      console.error(`Error loading component ${url}:`, error);
+      console.error(`Error loading component ${componentUrl}:`, error);
       return false;
     }
   }

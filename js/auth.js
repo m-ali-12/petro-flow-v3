@@ -113,21 +113,55 @@
 
   function showPendingPage(profile) {
     document.body.innerHTML = `
-      <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;
-           background:linear-gradient(135deg,#667eea,#764ba2);font-family:'Segoe UI',sans-serif">
-        <div style="background:#fff;border-radius:20px;padding:40px 50px;max-width:460px;text-align:center;
-             box-shadow:0 10px 40px rgba(0,0,0,.25)">
-          <div style="font-size:64px">⏳</div>
-          <h4 style="margin:16px 0 8px;color:#333">Account Pending Approval</h4>
-          <p style="color:#888;line-height:1.6">Your account is awaiting approval from an <strong>Admin</strong>
-            or <strong>Super Admin</strong>. Please contact your pump administrator.</p>
-          ${profile ? `<p style="margin-top:12px"><strong>Requested Role:</strong>
-            <span class="badge bg-secondary">${profile.role}</span></p>` : ''}
+      <div style="min-height:100vh; display:flex; align-items:center; justify-content:center;
+           background: linear-gradient(135deg, #1e1b4b 0%, #3730a3 40%, #4f46e5 100%);
+           font-family: 'Inter', system-ui, -apple-system, sans-serif; padding: 20px;">
+        
+        <div style="background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(20px);
+             border-radius: 24px; padding: 48px 40px; max-width: 500px; width: 100%;
+             text-align: center; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);">
+          
+          <div style="width: 80px; height: 80px; background: #eef2ff; border-radius: 20px;
+               display: flex; align-items: center; justify-content: center; margin: 0 auto 24px;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" fill="#4f46e5" class="bi bi-shield-lock" viewBox="0 0 16 16">
+              <path d="M5.338 1.59a.5.5 0 0 1 .424.039l6 3.5a.5.5 0 0 1 .238.43V12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5.56a.5.5 0 0 1 .238-.43l6-3.5zM6 14a1 1 0 0 0 1-1V5.26L2.415 8.113A1 1 0 0 0 2 8.94V12a1 1 0 0 0 1 1h3z"/>
+              <path d="M8 10a1 1 0 1 0 0-2 1 1 0 0 0 0 2z"/>
+              <path d="M14.5 3a.5.5 0 0 1 .5.5v9a.5.5 0 0 1-.5.5h-13a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5h13zm-13-1A1.5 1.5 0 0 0 0 3.5v9A1.5 1.5 0 0 0 1.5 14h13a1.5 1.5 0 0 0 1.5-1.5v-9A1.5 1.5 0 0 0 14.5 2h-13z"/>
+              <path d="M7 6.5A1.5 1.5 0 0 1 8.5 5h3A1.5 1.5 0 0 1 13 6.5v2A1.5 1.5 0 0 1 11.5 10h-3A1.5 1.5 0 0 1 7 8.5v-2zM8.5 6a.5.5 0 0 0-.5.5v2a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5v-2a.5.5 0 0 0-.5-.5h-3z"/>
+            </svg>
+          </div>
+          
+          <h2 style="color: #1e1b4b; font-weight: 800; font-size: 26px; margin-bottom: 12px; letter-spacing: -0.5px;">
+            Account Activation Required
+          </h2>
+          
+          <p style="color: #4b5563; line-height: 1.6; font-size: 16px; margin-bottom: 32px;">
+            Hello <b>${profile?.full_name || 'User'}</b>. For security reasons, your account for 
+            <span style="color: #4f46e5; font-weight: 600;">Khalid & Sons Petroleum</span> 
+            is currently <b>Pending Manual Approval</b> by an administrator.
+          </p>
+
+          <div style="background: #f9fafb; border: 1px dashed #d1d5db; border-radius: 16px; padding: 20px; margin-bottom: 32px;">
+            <div style="font-size: 13px; text-transform: uppercase; color: #9ca3af; font-weight: 700; margin-bottom: 8px; letter-spacing: 1px;">
+              Request Details
+            </div>
+            <div style="color: #111827; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 8px;">
+              <span style="width: 8px; height: 8px; background: #f59e0b; border-radius: 50%;"></span>
+              Role: ${profile?.role?.replace('_', ' ').toUpperCase() || 'N/A'}
+            </div>
+          </div>
+
           <button onclick="window.handleLogout()"
-            style="margin-top:24px;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;
-            border:none;border-radius:10px;padding:11px 32px;cursor:pointer;font-weight:600;font-size:15px">
-            ← Back to Login
+            style="width: 100%; background: linear-gradient(135deg, #4f46e5, #3730a3); color: #fff;
+            border: none; border-radius: 12px; padding: 14px 24px; cursor: pointer; font-weight: 700;
+            font-size: 16px; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 10px 15px -3px rgba(79, 70, 229, 0.4);">
+            Return to Login
           </button>
+          
+          <p style="margin-top: 24px; font-size: 14px; color: #9ca3af;">
+            Questions? Contact your site manager.
+          </p>
         </div>
       </div>`;
   }
