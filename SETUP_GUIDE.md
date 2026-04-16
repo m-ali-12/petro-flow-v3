@@ -9,10 +9,10 @@ Use these links to access the specific dashboard for each role:
 
 | Role          | Direct Link | Purpose |
 |---------------|-------------|---------|
-| **Super Admin** | `https://your-domain.vercel.app/admin` | System Settings, User Approvals, Profits |
-| **Admin**       | `https://your-domain.vercel.app/admin` | General Management & Pricing |
-| **Manager**     | `https://your-domain.vercel.app/manager` | Daily Khata, Customers, Reports |
-| **Employee**    | `https://your-domain.vercel.app/employee` | Daily Readings, Sale/Vasooli Entry |
+| **Super Admin** | `/admin` | System Settings, User Approvals, Profits |
+| **Admin**       | `/admin` | General Management & Pricing |
+| **Manager**     | `/manager` | Daily Khata, Customers, Reports |
+| **Employee**    | `/employee` | Daily Readings, Sale/Vasooli Entry |
 
 ---
 

@@ -22,7 +22,7 @@
 <div class="auth-container">
   <div class="auth-card">
     <div class="text-center mb-4">
-      <img src="assets/logo.jfif" alt="Logo" style="width:68px;height:68px;border-radius:50%;object-fit:cover;margin-bottom:12px"
+      <img src="/assets/logo.jfif" alt="Logo" style="width:68px;height:68px;border-radius:50%;object-fit:cover;margin-bottom:12px"
         onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2268%22 height=%2268%22><rect fill=%22%23667eea%22 width=%2268%22 height=%2268%22/><text x=%2250%%22 y=%2257%%22 font-size=%2234%22 fill=%22white%22 text-anchor=%22middle%22>P</text></svg>'">
       <h4 style="color:#333;font-weight:700;margin:0">Create Account</h4>
       <p class="text-muted small mt-1">PetroFlow Management System</p>
@@ -39,11 +39,21 @@
       </div>
       <div class="mb-3">
         <label class="form-label fw-semibold">Password</label>
-        <input type="password" class="form-control" id="password" placeholder="Min 6 characters" required minlength="6">
+        <div class="input-group">
+          <input type="password" class="form-control" id="password" placeholder="Min 6 characters" required minlength="6">
+          <button class="btn btn-outline-secondary" type="button" onclick="togglePass('password', this)">
+            <i class="bi bi-eye"></i>
+          </button>
+        </div>
       </div>
       <div class="mb-3">
         <label class="form-label fw-semibold">Confirm Password</label>
-        <input type="password" class="form-control" id="confirmPassword" required>
+        <div class="input-group">
+          <input type="password" class="form-control" id="confirmPassword" required>
+          <button class="btn btn-outline-secondary" type="button" onclick="togglePass('confirmPassword', this)">
+            <i class="bi bi-eye"></i>
+          </button>
+        </div>
       </div>
       <div class="mb-4">
         <label class="form-label fw-semibold">Requesting Role</label>
@@ -114,30 +124,34 @@
     try {
       const { data, error } = await window.supabaseClient.auth.signUp({ email, password });
       if (error) throw error;
-      const userId = data.user?.id;
-      if (!userId) throw new Error('Signup failed – please try again.');
-
-      const { error: profErr } = await window.supabaseClient.from('user_profiles').insert({
-        user_id: userId, email, full_name: fullName, role,
-        status: 'pending', created_at: new Date().toISOString()
-      });
-      if (profErr) throw profErr;
+      
+      // NOTE: User Profile is now created automatically by the database trigger
+      // defined in DATABASE_SETUP.sql. This prevents RLS errors.
 
       await window.supabaseClient.auth.signOut();
       showAlert(`
         <div class="text-center p-3">
           <i class="bi bi-check-circle-fill text-success" style="font-size: 40px;"></i>
           <h5 class="mt-3">Request Received!</h5>
-          <p class="mb-0">Your request for <b>${role.toUpperCase()}</b> access has been submitted. 
-          Please contact our Admin team for activation.</p>
+          <p class="mb-0">Your account has been created successfully. 
+          Please contact our Admin team for activation if your role requires approval.</p>
         </div>
       `, 'success');
       btn.innerHTML = '<i class="bi bi-check-circle-fill me-2"></i>Submitted';
     } catch (err) {
       showAlert(err.message || 'Signup failed. Please try again.', 'danger');
       btn.disabled = false;
-      btn.innerHTML = '<i class="bi bi-person-plus me-2"></i>Request Account';
+      btn.innerHTML = '<i class="bi bi-person-plus-fill me-2"></i>Create Request';
     }
+  }
+
+  function togglePass(id, btn) {
+    const p = document.getElementById(id);
+    const type = p.getAttribute('type') === 'password' ? 'text' : 'password';
+    p.setAttribute('type', type);
+    const i = btn.querySelector('i');
+    i.classList.toggle('bi-eye');
+    i.classList.toggle('bi-eye-slash');
   }
 
   function showAlert(msg, type) {
