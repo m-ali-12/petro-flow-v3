@@ -128,6 +128,10 @@
 
       // Step 6: Active — go to dashboard
       showAlert(`✅ Welcome back, <strong>${profile.full_name || email}</strong>! Redirecting...`, 'success');
+      
+      // Set redirect flag for auth.js homepage handling
+      sessionStorage.setItem('pf_just_logged_in', 'true');
+      
       setTimeout(() => window.location.replace('index.html'), 700);
 
     } catch (err) {

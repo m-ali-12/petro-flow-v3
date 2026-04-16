@@ -77,10 +77,38 @@
       window.currentUserProfile = profile;
       window.userRole           = profile.role;
       window.userPermissions    = window.ROLE_PERMISSIONS[profile.role] || window.ROLE_PERMISSIONS.employee;
+      
       applyRoleUI(profile);
+
+      // ✅ DISPATCH SESSION READY (Fixes 400 errors in other scripts)
+      window.PETRO_SESSION_READY = true;
+      document.dispatchEvent(new CustomEvent('petroSessionReady', { detail: profile }));
+
+      // ✅ ROLE-BASED HOMEPAGE REDIRECT (only from index.html)
+      handleHomepageRedirect(profile);
+
     } catch (err) {
       console.error('Auth error:', err);
-      window.location.replace('login.html');
+      // Don't loop if we are already on login page
+      if (!isAuthPage) window.location.replace('/login.html');
+    }
+  }
+
+  function handleHomepageRedirect(profile) {
+    const isIndex = path === '/' || path.endsWith('index.html');
+    if (!isIndex) return;
+
+    // Optional: Only redirect if the user just logged in (can be checked via sessionStorage)
+    if (sessionStorage.getItem('pf_just_logged_in') === 'true') {
+      sessionStorage.removeItem('pf_just_logged_in');
+      const homeMap = {
+        super_admin: '/admin/admin-panel.html',
+        admin:       '/admin/admin-panel.html',
+        manager:     '/manager/customers.html',
+        employee:    '/index.html' // Dashboard is home for employee
+      };
+      const target = homeMap[profile.role] || '/index.html';
+      if (path !== target) window.location.replace(target);
     }
   }
 
@@ -175,5 +203,5 @@
   window.hasPermission = perm => !!(window.userPermissions && window.userPermissions[perm]);
   window.isRole = (...roles) => roles.includes(window.userRole);
 
-  console.log('✅ Auth v2.0 (role-based) loaded');
+  console.log('✅ Auth v2.1 (sync-enabled) loaded');
 })();

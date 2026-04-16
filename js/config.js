@@ -33,8 +33,6 @@
             return;
         }
 
-        if (!window.supabaseClient) {
-
             window.supabaseClient = window.supabase.createClient(
                 SUPABASE_URL,
                 SUPABASE_ANON_KEY,
@@ -51,10 +49,12 @@
                     }
                 }
             );
+            
+            // ✅ EXPOSE GLOBALLY FOR OLDER SCRIPTS
+            window.supabase = window.supabaseClient;
 
             console.log('✅ Supabase initialized correctly');
         }
-    }
 
     initSupabase();
 

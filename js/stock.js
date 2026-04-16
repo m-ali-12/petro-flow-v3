@@ -4,32 +4,35 @@
 // Table: stock_entries (primary), tanks (stock level)
 // =============================================
 
-document.addEventListener('DOMContentLoaded', async function () {
+document.addEventListener('DOMContentLoaded', function () {
     if (document.body.dataset.page !== 'stock') return;
 
-    function waitForSupabase(cb) {
-        if (window.supabaseClient) cb();
-        else setTimeout(() => waitForSupabase(cb), 100);
+    // Fast path: session already ready
+    if (window.PETRO_SESSION_READY) {
+        initStockPage();
+    } else {
+        // Wait for auth.js
+        document.addEventListener('petroSessionReady', initStockPage);
     }
-
-    waitForSupabase(async () => {
-        const now = new Date();
-        const monthVal = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-        const mf = document.getElementById('filter-month');
-        if (mf) mf.value = monthVal;
-
-        const di = document.getElementById('purchase-date-input');
-        if (di) di.value = now.toISOString().split('T')[0];
-
-        await Promise.all([
-            loadCurrentStock(),
-            loadHistory(),
-            loadMonthlyStats(),
-            loadMonthlyChart()
-        ]);
-        setupLiveCalc();
-    });
 });
+
+async function initStockPage() {
+    const now = new Date();
+    const monthVal = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const mf = document.getElementById('filter-month');
+    if (mf) mf.value = monthVal;
+
+    const di = document.getElementById('purchase-date-input');
+    if (di) di.value = now.toISOString().split('T')[0];
+
+    await Promise.all([
+        loadCurrentStock(),
+        loadHistory(),
+        loadMonthlyStats(),
+        loadMonthlyChart()
+    ]);
+    setupLiveCalc();
+}
 
 // =============================================
 // Live Calculation

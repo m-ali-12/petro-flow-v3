@@ -4,27 +4,22 @@
 // =============================================
 
 // Wait for DOM and auth
-document.addEventListener('DOMContentLoaded', async function() {
-    console.log('Dashboard initializing...');
+// Wait for DOM and then Auth
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('Dashboard waiting for auth...');
     
     // Check if on index page
-    if (!document.body.dataset.page || document.body.dataset.page !== 'index') {
-        console.log('Not on dashboard page');
-        return;
+    if (document.body.dataset.page !== 'index') return;
+
+    // If session is already ready (fast load)
+    if (window.PETRO_SESSION_READY) {
+        initDashboard();
+    } else {
+        // Wait for auth.js to signal reality
+        document.addEventListener('petroSessionReady', () => {
+            initDashboard();
+        });
     }
-    
-    // Wait for supabase
-    function waitForSupabase(callback) {
-        if (window.supabaseClient) {
-            callback();
-        } else {
-            setTimeout(() => waitForSupabase(callback), 100);
-        }
-    }
-    
-    waitForSupabase(async () => {
-        await initDashboard();
-    });
 });
 
 // =============================================

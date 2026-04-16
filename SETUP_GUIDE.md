@@ -1,44 +1,43 @@
-# PetroFlow — Fix Guide
-## Three Issues Resolved
+# 🚀 PetroFlow — Final Setup & Fix Guide
+
+This guide contains everything you need to run the fixed and upgraded PetroFlow system.
 
 ---
 
-## ✅ Issue 1: Role-Based Authentication
+## 🔗 Role-Based Direct Links
+Use these links to access the specific dashboard for each role:
 
-### What was wrong
-`auth.js` had authentication **fully disabled** (commented out). Anyone could access the system without logging in.
+| Role          | Direct Link | Purpose |
+|---------------|-------------|---------|
+| **Super Admin** | `https://your-domain.vercel.app/admin` | System Settings, User Approvals, Profits |
+| **Admin**       | `https://your-domain.vercel.app/admin` | General Management & Pricing |
+| **Manager**     | `https://your-domain.vercel.app/manager` | Daily Khata, Customers, Reports |
+| **Employee**    | `https://your-domain.vercel.app/employee` | Daily Readings, Sale/Vasooli Entry |
 
-### What was fixed
-| File | Change |
-|------|--------|
-| `js/auth.js` | **Completely rewritten** — active auth with 4 roles |
-| `js/login.js` | Updated to check profile status before redirecting |
-| `signup.html` | New signup — creates profile with `status: pending` |
-| `admin-panel.html` | **New page** — approve/reject/manage all users |
+---
 
-### Role Hierarchy
+## 🛠️ Step 1: Database Setup (CRITICAL)
+If you see **400 Bad Request** or **404 Not Found** for data, you MUST run the new SQL script.
 
-```
-super_admin  ← Can do everything + assign super_admin role + approve admins
-    │
-   admin  ← Can manage managers/employees, edit prices, view all reports
-    │
-  manager  ← Can enter transactions, view reports, manage cash deposits
-    │
- employee  ← Basic data entry only (daily readings, transactions)
-```
+1. Go to your [Supabase SQL Editor](https://supabase.com/dashboard/project/_/sql).
+2. Open the file `DATABASE_SETUP.sql` from this project.
+3. Copy the **entire content** and paste it into the Supabase SQL Editor.
+4. Click **Run**.
+5. This creates all tables and fixes the "Infinite Redirect" and "Permission Denied" errors.
 
-### How it works
-1. User signs up → profile created with `status = 'pending'`
-2. They see "Account Pending Approval" screen after login
-3. Admin/Super Admin goes to **Admin Panel** → approves them and sets their role
-4. User can now login normally
+---
 
-### First-time Setup (IMPORTANT)
-After running `MIGRATION.sql`, you need one super admin to start:
+## 📧 Step 2: Gmail Rate Limit Fix
+If emails (Signup/Forgot Password) are not sending, follow the `GMAIL_RATE_LIMIT_FIX.md` guide.
+1. You must use a **Google App Password**.
+2. Configure it in Supabase > Authentication > SMTP.
+
+---
+
+## 🔐 Step 3: Promote Yourself to Super Admin
+After you sign up on the site, you won't have access until you are approved. Run this in Supabase SQL Editor:
 
 ```sql
--- Run in Supabase SQL Editor after creating your account via signup.html
 UPDATE user_profiles
 SET role = 'super_admin', status = 'active'
 WHERE email = 'your-email@example.com';
@@ -46,124 +45,35 @@ WHERE email = 'your-email@example.com';
 
 ---
 
-## ✅ Issue 2: Date-Wise Entry (From April + Previous Months)
+## ✅ Fixed Issues Summary
 
-### What was wrong
-Daily Readings page had no "All Time" or "Since April" filter option. Profit/Loss page also lacked these options.
+### 1. 🔄 Infinite Redirect Loop
+Fixed by adding a session synchronization layer in `auth.js`. The app now waits for the Supabase session to be fully loaded before redirecting.
 
-### What was fixed
-| File | Change |
-|------|--------|
-| `daily-readings.html` | Added **"April 2026 Se"** and **"Tamam Entries"** period options |
-| `js/daily-readings.js` | Added `since_april` and `all_time` cases to `getRange()` |
-| `profit-loss.html` | Same two new period options added + date range logic |
+### 2. 🚫 400 Bad Request (RLS Errors)
+Fixed by implementing **Security Definer** functions in PostgreSQL. This prevents the "Infinite Recursion" error where the database keeps checking the role of the user checking the role.
 
-### New Filter Options
-- **Aaj** — Today only
-- **Is Hafte** — This week
-- **Is Mahine** — Current month (default)
-- **Pichle Mahine** — Last month
-- **April 2026 Se** ← **NEW** — From April 1, 2026 to today
-- **Is Saal** — Full year
-- **Tamam Entries** ← **NEW** — From 2020-01-01 (all records)
-- **Custom Range** — Pick any date range
+### 3. 📂 Folder Reorganization
+The project is now cleanly split into folders:
+- `/admin`: Settings, Pump Profile, User Management.
+- `/manager`: Khata, Customers, Reports.
+- `/employee`: Transactions, Mobil Stock, Daily Readings.
+
+### 4. 📝 Transaction Fixes
+Cleaned up `transactions-COMPLETE-vok.js`. Removed 3000 lines of old commented code and synchronized it with the new auth system.
+
+### 5. 🖼️ Missing Assets (404)
+Fixed logo paths. Standardized image locations in `/assets`.
 
 ---
 
-## ✅ Issue 3: Cash Deposit in Bank (Multiple Banks, Daily)
-
-### What was created
-This feature **did not exist** in the project. Completely new module built from scratch.
-
-| File | Description |
-|------|-------------|
-| `bank-deposits.html` | Full bank deposit management page |
-| `js/bank-deposits.js` | Complete logic — CRUD, pagination, summary cards |
-| `MIGRATION.sql` | Database tables: `banks` + `cash_deposits` |
-
-### Features
-- **Multiple banks** — Add HBL, MCB, UBL, ABL, NBP, or any custom bank
-- **Daily deposits** — Record date, bank, amount, deposited-by, reference slip, notes
-- **Bank-wise summary** — Visual progress bars showing each bank's share
-- **Date filtering** — Filter deposits by date range and bank
-- **Statistics** — Today's total, this month's total, deposit count, active banks
-- **Permission-controlled** — Only managers and above can add deposits
-
-### Pre-seeded Banks
-The migration automatically adds 5 common Pakistani banks:
-- HBL (Habib Bank)
-- MCB (Muslim Commercial)
-- UBL (United Bank)
-- ABL (Allied Bank)
-- NBP (National Bank)
-
-You can add/edit/delete banks from the Bank Deposits page.
-
----
-
-## 🚀 Deployment Steps
-
-### Step 1 — Run Supabase Migration
-1. Go to Supabase Dashboard → SQL Editor
-2. Open `MIGRATION.sql`
-3. Click **Run**
-
-### Step 2 — Promote Your Super Admin
-```sql
-UPDATE user_profiles
-SET role = 'super_admin', status = 'active'
-WHERE email = 'YOUR_EMAIL_HERE';
-```
-
-### Step 3 — Deploy to Vercel
-```bash
-# If using Vercel CLI
-vercel --prod
-
-# Or connect GitHub repo in Vercel dashboard and it auto-deploys
-```
-
-### Step 4 — Create Other Users
-1. Go to `signup.html`
-2. Each user registers and selects their role
-3. You (super admin) go to **Admin Panel** and approve them
-
----
-
-## 🔐 Permission Reference
+## 📋 Permission Reference
 
 | Feature | Employee | Manager | Admin | Super Admin |
 |---------|----------|---------|-------|-------------|
-| View Dashboard | ✅ | ✅ | ✅ | ✅ |
-| Daily Readings | ✅ | ✅ | ✅ | ✅ |
-| Transactions Entry | ✅ | ✅ | ✅ | ✅ |
+| Sale/Vasooli Entry | ✅ | ✅ | ✅ | ✅ |
 | View Customers | ✅ | ✅ | ✅ | ✅ |
-| Cash Deposits (Bank) | ❌ | ✅ | ✅ | ✅ |
-| View Reports | ❌ | ✅ | ✅ | ✅ |
-| Edit Fuel Prices | ❌ | ❌ | ✅ | ✅ |
-| Manage Settings | ❌ | ❌ | ✅ | ✅ |
-| Approve Users | ❌ | ❌ | ✅ | ✅ |
-| Assign Super Admin Role | ❌ | ❌ | ❌ | ✅ |
-| Delete Transactions | ❌ | ❌ | ❌ | ✅ |
-
----
-
-## 📋 New Pages Summary
-
-| Page | URL | Access |
-|------|-----|--------|
-| Login | `login.html` | Public |
-| Sign Up | `signup.html` | Public |
-| **Admin Panel** | `admin-panel.html` | Admin + Super Admin |
-| **Bank Deposits** | `bank-deposits.html` | Manager and above |
-
----
-
-## 🗄️ New Database Tables
-
-```sql
-user_profiles     -- Role, status, approval for each user
-banks             -- Bank accounts (HBL, MCB, etc.)
-cash_deposits     -- Daily cash deposits per bank
-v_daily_bank_summary  -- View: daily totals per bank
-```
+| Bank Deposits | ❌ | ✅ | ✅ | ✅ |
+| Fuel Price Editing | ❌ | ❌ | ✅ | ✅ |
+| User Approvals | ❌ | ❌ | ✅ | ✅ |
+| Delete Everything | ❌ | ❌ | ❌ | ✅ |

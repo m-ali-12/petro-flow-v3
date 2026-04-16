@@ -2192,7 +2192,6 @@
         searchEl.value = ''; searchEl.style.display = 'block';
         if(boxEl) boxEl.style.display = 'none';
         listEl.style.display = 'none';
-        // Hide print row on Cash Advance modal open
         if(opts.modalId==='cashAdvanceModal'){
           const pr=el('advance-print-btn-row'); if(pr) pr.style.display='none';
         }
@@ -2438,7 +2437,6 @@
       </tr>`;
     }).join('');
 
-    // Attach checkbox listeners
     tbody.querySelectorAll('.tx-row-cb').forEach(cb=>{
       cb.addEventListener('change',function(){
         const id=parseInt(this.dataset.id);
@@ -2674,7 +2672,6 @@ ${bodyHtml}
     const description=el('expense-description')?.value||'';
     const expType=el('expense-type')?.value;
     const account=el('expense-account')?.value;
-    // Customer optional — agar select kiya hai to us pe charge lagao, warna owner
     const cust=selectedCustomers.expense;
 
     if(!amount){ alert('Amount enter karein'); return; }
@@ -2684,10 +2681,8 @@ ${bodyHtml}
     try{
       let custId=null;
       if(cust){
-        // Customer ke balance mein add karo (agar uski taraf se expense hai)
         custId=parseInt(cust.id);
       } else {
-        // Owner account se
         const{data:owner}=await supabase.from('customers').select('id').eq('category','Owner').maybeSingle();
         if(owner){ custId=owner.id; }
         else{
@@ -2708,9 +2703,6 @@ ${bodyHtml}
     }catch(e){ alert('Expense Error: '+e.message); }
   }
 
-  // ══════════════════════════════════════════════════════════
-  // CASH ADVANCE — Save only (separate print button)
-  // ══════════════════════════════════════════════════════════
   async function handleCashAdvance(){
     const cust=selectedCustomers.advance;
     if(!cust){ alert('Customer select karein'); return; }
@@ -2721,30 +2713,18 @@ ${bodyHtml}
     if(!amount){ alert('Amount enter karein'); return; }
     if(!reason){ alert('Wajah select karein'); return; }
 
-    // Show loading state
     const btn=document.querySelector('#cashAdvanceForm button[type="submit"]');
     if(btn){ btn.disabled=true; btn.innerHTML='<span class="spinner-border spinner-border-sm me-1"></span>Saving...'; }
 
     try{
-      // 1. Get user_id
       const userId=(await supabase.auth.getUser()).data?.user?.id||null;
-
-      // 2. Insert into cash_advances — with user_id
       let advId=null;
       const advObj={customer_id:parseInt(cust.id),amount,reason,advance_date:advDate,notes,status:'pending'};
       if(userId) advObj.user_id=userId;
 
       const{data:advData,error:advErr}=await supabase.from('cash_advances').insert([advObj]).select().single();
-      if(advErr){
-        // If RLS fails, try without user_id
-        const{data:advData2,error:advErr2}=await supabase.from('cash_advances')
-          .insert([{customer_id:parseInt(cust.id),amount,reason,advance_date:advDate,notes,status:'pending'}])
-          .select().single();
-        if(!advErr2&&advData2) advId=advData2.id;
-        else console.warn('cash_advances insert failed:',advErr2?.message);
-      } else if(advData){ advId=advData.id; }
+      if(!advErr){ advId=advData.id; }
 
-      // 3. Insert transaction
       const txObj={customer_id:parseInt(cust.id),transaction_type:'Advance',charges:amount,
         description:`Cash Advance: ${reason}${notes?' | '+notes:''}`};
       if(userId) txObj.user_id=userId;
@@ -2753,38 +2733,28 @@ ${bodyHtml}
       const{error:txErr}=await supabase.from('transactions').insert([txObj]);
       if(txErr) throw txErr;
 
-      // 4. Update customer balance
       const newBal=(parseFloat(cust.balance)||0)+amount;
       await supabase.from('customers').update({balance:newBal}).eq('id',cust.id);
       const lc=allCustomers.find(c=>c.id==cust.id); if(lc) lc.balance=newBal;
 
-      // 5. Store last saved advance for print button
       window._lastSavedAdvance={id:advId,customer:cust,amount,reason,notes,advance_date:advDate,newBalance:newBal};
-
       showToast('success','Saved!',`Cash Advance Rs.${fmt(amount)} save ho gaya!`);
-
-      // Show print prompt
       if(el('advance-print-btn-row')) el('advance-print-btn-row').style.display='block';
 
-      // Reset form but keep modal open to show print button
       if(el('advance-amount')) el('advance-amount').value='';
       if(el('advance-reason')) el('advance-reason').value='';
       if(el('advance-notes')) el('advance-notes').value='';
       if(el('advance-date')) el('advance-date').value='';
-      // Reset customer
       selectedCustomers.advance=null;
-      const hiddenEl=el('advance-customer-hidden'); if(hiddenEl) hiddenEl.value='';
-      const searchEl=el('advance-cust-search'); if(searchEl){searchEl.value='';searchEl.style.display='block';}
-      const boxEl=el('advance-cust-selected'); if(boxEl) boxEl.style.display='none';
+      if(el('advance-customer-hidden')) el('advance-customer-hidden').value='';
+      if(el('advance-cust-search')){el('advance-cust-search').value=''; el('advance-cust-search').style.display='block';}
+      if(el('advance-cust-selected')) el('advance-cust-selected').style.display='none';
 
       await loadCustomers();
       await loadTransactions();
       await loadAdvanceList();
-    }catch(e){
-      alert('Advance Error: '+e.message);
-    }finally{
-      if(btn){ btn.disabled=false; btn.innerHTML='<i class="bi bi-check-circle me-1"></i>Save Karein'; }
-    }
+    }catch(e){ alert('Advance Error: '+e.message); }
+    finally{ if(btn){ btn.disabled=false; btn.innerHTML='<i class="bi bi-check-circle me-1"></i>Save Karein'; } }
   }
 
   window.printLastAdvance=function(){
@@ -2792,9 +2762,6 @@ ${bodyHtml}
     printAdvanceReceipt(window._lastSavedAdvance);
   };
 
-  // ══════════════════════════════════════════════════════════
-  // PRINT ADVANCE PARCHI
-  // ══════════════════════════════════════════════════════════
   function printAdvanceReceipt(adv){
     const company='Khalid & Sons Petroleum';
     const pDate=new Date().toLocaleDateString('en-PK',{day:'2-digit',month:'long',year:'numeric'});
@@ -2838,9 +2805,6 @@ ${adv.notes?`<div class="row"><span class="lbl">Notes</span><span class="val">${
     if(w){ w.document.write(html); w.document.close(); } else alert('Popup blocked!');
   }
 
-  // ══════════════════════════════════════════════════════════
-  // CASH ADVANCE LIST
-  // ══════════════════════════════════════════════════════════
   async function loadAdvanceList(){
     const tbody=el('advance-list-tbody'); if(!tbody) return;
     tbody.innerHTML='<tr><td colspan="8" class="text-center py-3"><div class="spinner-border spinner-border-sm text-primary me-2"></div>Loading...</td></tr>';
@@ -2869,51 +2833,24 @@ ${adv.notes?`<div class="row"><span class="lbl">Notes</span><span class="val">${
         };
         return `<tr>
           <td style="padding:10px 12px;color:#888;">${idx+1}</td>
-          <td style="padding:10px 12px;">
-            <strong>${a.customers?.name||'N/A'}</strong><br>
-            <small style="color:#888;">#${a.customers?.sr_no||'-'} | ${a.customers?.phone||'-'}</small>
-          </td>
+          <td style="padding:10px 12px;"><strong>${a.customers?.name||'N/A'}</strong><br><small style="color:#888;">#${a.customers?.sr_no||'-'} | ${a.customers?.phone||'-'}</small></td>
           <td style="padding:10px 12px;">${a.advance_date?new Date(a.advance_date).toLocaleDateString('en-PK'):'—'}</td>
           <td style="padding:10px 12px;font-weight:700;color:#6f42c1;font-size:15px;">Rs.${fmt(amt)}</td>
           <td style="padding:10px 12px;">${a.reason||'-'}${a.notes?`<br><small style="color:#888">${a.notes}</small>`:''}</td>
-          <td style="padding:10px 12px;">
-            <span style="font-weight:700;color:${custBal>0?'#dc3545':'#198754'};">Rs.${fmt(Math.abs(custBal))}</span>
-            <br><small style="color:${custBal>0?'#dc3545':'#198754'};">${custBal>0?'Baqi':'Saaf'}</small>
-          </td>
+          <td style="padding:10px 12px;"><span style="font-weight:700;color:${custBal>0?'#dc3545':'#198754'};">Rs.${fmt(Math.abs(custBal))}</span><br><small style="color:${custBal>0?'#dc3545':'#198754'};">${custBal>0?'Baqi':'Saaf'}</small></td>
           <td style="padding:10px 12px;">${sMap[a.status]||a.status}</td>
-          <td style="padding:10px 12px;">
-            <div style="display:flex;gap:4px;flex-wrap:wrap;">
-              <button onclick="window.printAdvListItem(${a.id})"
-                style="background:#6f42c1;color:#fff;border:none;border-radius:5px;padding:4px 9px;cursor:pointer;font-size:12px;">
-                <i class="bi bi-printer"></i> Parchi
-              </button>
-              ${a.status!=='cleared'?`<button onclick="window.markAdvanceCleared(${a.id})"
-                style="background:#198754;color:#fff;border:none;border-radius:5px;padding:4px 9px;cursor:pointer;font-size:12px;">
-                <i class="bi bi-check2"></i> Clear
-              </button>`:''}
-            </div>
-          </td>
-        </tr>`;
+          <td style="padding:10px 12px;"><div style="display:flex;gap:4px;flex-wrap:wrap;">
+            <button onclick="window.printAdvListItem(${a.id})" style="background:#6f42c1;color:#fff;border:none;border-radius:5px;padding:4px 9px;cursor:pointer;font-size:12px;"><i class="bi bi-printer"></i> Parchi</button>
+            ${a.status!=='cleared'?`<button onclick="window.markAdvanceCleared(${a.id})" style="background:#198754;color:#fff;border:none;border-radius:5px;padding:4px 9px;cursor:pointer;font-size:12px;"><i class="bi bi-check2"></i> Clear</button>`:''}
+          </div></td></tr>`;
       }).join('');
-      if(el('advance-list-tfoot')) el('advance-list-tfoot').innerHTML=`
-        <tr style="background:#f3eeff;font-weight:800;">
-          <td colspan="3" style="padding:10px 12px;text-align:right;color:#6f42c1;">TOTAL:</td>
-          <td style="padding:10px 12px;color:#6f42c1;font-size:16px;">Rs.${fmt(totalAdv)}</td>
-          <td colspan="4"></td>
-        </tr>`;
-    }catch(e){
-      console.error('loadAdvanceList:',e);
-      if(tbody) tbody.innerHTML=`<tr><td colspan="8" class="text-center py-3 text-warning">
-        <i class="bi bi-exclamation-triangle me-1"></i>
-        Cash Advances table nahi mili — pehle <strong>db-migration.sql</strong> Supabase mein chalao
-      </td></tr>`;
-    }
+      if(el('advance-list-tfoot')) el('advance-list-tfoot').innerHTML=`<tr style="background:#f3eeff;font-weight:800;"><td colspan="3" style="padding:10px 12px;text-align:right;color:#6f42c1;">TOTAL:</td><td style="padding:10px 12px;color:#6f42c1;font-size:16px;">Rs.${fmt(totalAdv)}</td><td colspan="4"></td></tr>`;
+    }catch(e){ console.error('loadAdvanceList:',e); }
   }
 
   window.printAdvListItem=async function(advId){
     try{
-      const{data,error}=await supabase.from('cash_advances')
-        .select('*, customers(name,sr_no,phone,balance)').eq('id',advId).single();
+      const{data,error}=await supabase.from('cash_advances').select('*, customers(name,sr_no,phone,balance)').eq('id',advId).single();
       if(error) throw error;
       printAdvanceReceipt({...data,customer:data.customers,newBalance:data.customers?.balance||0});
     }catch(e){ alert('Error: '+e.message); }
@@ -2929,9 +2866,6 @@ ${adv.notes?`<div class="row"><span class="lbl">Notes</span><span class="val">${
     }catch(e){ alert('Error: '+e.message); }
   };
 
-  // ══════════════════════════════════════════════════════════
-  // DELETE
-  // ══════════════════════════════════════════════════════════
   window.deleteTransaction=async function(id){
     if(!confirm('Delete karein?')) return;
     try{
@@ -2956,16 +2890,12 @@ ${adv.notes?`<div class="row"><span class="lbl">Notes</span><span class="val">${
     }catch(e){ alert('Error: '+e.message); }
   };
 
-  // ══════════════════════════════════════════════════════════
-  // SALE HELPERS
-  // ══════════════════════════════════════════════════════════
   window.updateSaleFuelPrice=function(){
     const fuel=el('sale-fuel-type')?.value; if(!fuel) return;
     const price=window.fuelPrices[fuel]||0;
     if(el('sale-unit-price')) el('sale-unit-price').value=price;
     const s=el('sale-price-source');
-    if(s){
-      if(price>0){ s.textContent=`${fuel} = Rs.${price}`; s.className='text-success small'; }
+    if(s){ if(price>0){ s.textContent=`${fuel} = Rs.${price}`; s.className='text-success small'; }
       else{ s.textContent='⚠️ Settings mein price set karein'; s.className='text-danger small'; }
     }
     window.calcSaleFromLiters();
@@ -2993,48 +2923,38 @@ ${adv.notes?`<div class="row"><span class="lbl">Notes</span><span class="val">${
     if(el('vasooli-amount')) el('vasooli-amount').value=(liters*(window.fuelPrices[fuel]||0)).toFixed(2);
   };
 
-  // ══════════════════════════════════════════════════════════
-  // EVENT LISTENERS
-  // ══════════════════════════════════════════════════════════
   function setupEvents(){
-    el('newSaleForm')    ?.addEventListener('submit',e=>{ e.preventDefault(); handleNewSale(); });
-    el('vasooliForm')    ?.addEventListener('submit',e=>{ e.preventDefault(); handleVasooli(); });
-    el('expenseForm')    ?.addEventListener('submit',e=>{ e.preventDefault(); handleExpense(); });
+    el('newSaleForm')?.addEventListener('submit',e=>{ e.preventDefault(); handleNewSale(); });
+    el('vasooliForm')?.addEventListener('submit',e=>{ e.preventDefault(); handleVasooli(); });
+    el('expenseForm')?.addEventListener('submit',e=>{ e.preventDefault(); handleExpense(); });
     el('cashAdvanceForm')?.addEventListener('submit',e=>{ e.preventDefault(); handleCashAdvance(); });
-
-    el('sale-fuel-type')       ?.addEventListener('change',window.updateSaleFuelPrice);
-    el('sale-liters')          ?.addEventListener('input',window.calcSaleFromLiters);
-    el('sale-amount-direct')   ?.addEventListener('input',window.calcSaleFromAmount);
-    el('lbl-by-liters')        ?.addEventListener('click',()=>window.toggleSaleMethod('liters'));
-    el('lbl-by-amount')        ?.addEventListener('click',()=>window.toggleSaleMethod('amount'));
+    el('sale-fuel-type')?.addEventListener('change',window.updateSaleFuelPrice);
+    el('sale-liters')?.addEventListener('input',window.calcSaleFromLiters);
+    el('sale-amount-direct')?.addEventListener('input',window.calcSaleFromAmount);
+    el('lbl-by-liters')?.addEventListener('click',()=>window.toggleSaleMethod('liters'));
+    el('lbl-by-amount')?.addEventListener('click',()=>window.toggleSaleMethod('amount'));
     el('vasooli-fuel-category')?.addEventListener('change',window.calculateVasooliAmount);
-    el('vasooli-liters')       ?.addEventListener('input',window.calculateVasooliAmount);
-
-    el('btn-apply-filter')         ?.addEventListener('click',window.applyFilters);
-    el('btn-clear-filter')         ?.addEventListener('click',window.clearTransactionFilters);
-    el('btn-print-all-summary')    ?.addEventListener('click',window.printAllSummary);
-    el('btn-print-all-monthly')    ?.addEventListener('click',window.printAllMonthly);
+    el('vasooli-liters')?.addEventListener('input',window.calculateVasooliAmount);
+    el('btn-apply-filter')?.addEventListener('click',window.applyFilters);
+    el('btn-clear-filter')?.addEventListener('click',window.clearTransactionFilters);
+    el('btn-print-all-summary')?.addEventListener('click',window.printAllSummary);
+    el('btn-print-all-monthly')?.addEventListener('click',window.printAllMonthly);
     el('btn-print-selected-summary')?.addEventListener('click',window.printSelectedSummary);
     el('btn-print-selected-monthly')?.addEventListener('click',window.printSelectedMonthly);
-    el('btn-delete-selected')       ?.addEventListener('click',window.deleteSelected);
-    el('btn-clear-selection')       ?.addEventListener('click',()=>{ selectedIds.clear(); renderPage(); updateBulkBar(); });
-
+    el('btn-delete-selected')?.addEventListener('click',window.deleteSelected);
+    el('btn-clear-selection')?.addEventListener('click',()=>{ selectedIds.clear(); renderPage(); updateBulkBar(); });
     el('select-all-cb')?.addEventListener('change',function(){
       const pageIds=filteredTransactions.slice((currentPage-1)*pageSize,currentPage*pageSize).map(t=>t.id);
       pageIds.forEach(id=>{ if(this.checked) selectedIds.add(id); else selectedIds.delete(id); });
       renderPage(); updateBulkBar();
     });
-
     const si=el('filter-search');
     if(si){ let deb; si.addEventListener('input',()=>{ clearTimeout(deb); deb=setTimeout(()=>{ activeFilters.search=si.value; applyFilters(); },300); }); }
-    el('filter-customer') ?.addEventListener('change',function(){ activeFilters.customerId=this.value; applyFilters(); });
+    el('filter-customer')?.addEventListener('change',function(){ activeFilters.customerId=this.value; applyFilters(); });
     el('advance-filter-status')?.addEventListener('change',loadAdvanceList);
   }
 
-  // ══════════════════════════════════════════════════════════
-  // INIT
-  // ══════════════════════════════════════════════════════════
-  document.addEventListener('DOMContentLoaded', async()=>{
+  async function init() {
     console.log('Transactions v5 init...');
     setupEvents();
     await loadFuelPrices();
@@ -3043,7 +2963,14 @@ ${adv.notes?`<div class="row"><span class="lbl">Notes</span><span class="val">${
     await loadTransactions();
     await loadAdvanceList();
     console.log('Transactions v5 ready.');
-  });
+  }
+
+  // WAIT FOR SESSION
+  if (window.supabaseClient && window.supabaseClient.auth.getSession()) {
+    document.addEventListener('petroSessionReady', init);
+  } else {
+    document.addEventListener('DOMContentLoaded', init);
+  }
 
   window.loadInitialTransactions=loadTransactions;
-})();
+})();
