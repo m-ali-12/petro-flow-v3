@@ -2,6 +2,18 @@
 
 This guide contains everything you need to run the fixed and upgraded PetroFlow system.
 
+## 🏁 Post-Deployment (Vercel/Live) — CRITICAL
+
+If you have deployed your app to Vercel (e.g., `https://your-app.vercel.app`), you **MUST** update your Supabase settings, otherwise email confirmation links will take you to `localhost:3000` (Error: This site can't be reached).
+
+### 🚀 Update Supabase Authentication URL
+
+1.  Open your [Supabase Dashboard](https://supabase.com/dashboard).
+2.  Go to **Authentication** (Sidebar) → **URL Configuration**.
+3.  **Site URL**: Change `http://localhost:3000` to your **LIVE LINK** (e.g., `https://petro-flow-v3.vercel.app/`).
+4.  **Redirect URLs**: Add your live link followed by `/**` (e.g., `https://petro-flow-v3.vercel.app/**`).
+5.  Click **Save**.
+
 ---
 
 ## 🔗 Role-Based Direct Links
