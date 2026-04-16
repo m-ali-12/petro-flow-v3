@@ -123,18 +123,35 @@ async function loadTodaySummary() {
 // =============================================
 async function loadRecentTransactions() {
     try {
-        const { data, error } = await window.supabaseClient
+        // Fetch recent transactions (no FK join to avoid PGRST200)
+        const { data: txData, error: txError } = await window.supabaseClient
             .from('transactions')
-            .select('*, customers(name)')
+            .select('*')
             .order('created_at', { ascending: false })
             .limit(10);
         
-        if (error) {
-            console.error('Error loading transactions:', error);
+        if (txError) {
+            console.error('Error loading transactions:', txError);
+            displayTransactions([]);
             return;
         }
-        
-        displayTransactions(data || []);
+
+        const transactions = txData || [];
+
+        // Fetch customer names separately if we have customer_ids
+        const customerIds = [...new Set(transactions.map(t => t.customer_id).filter(Boolean))];
+        if (customerIds.length > 0) {
+            const { data: custData } = await window.supabaseClient
+                .from('customers')
+                .select('id, name')
+                .in('id', customerIds);
+            
+            const custMap = {};
+            (custData || []).forEach(c => custMap[c.id] = c.name);
+            transactions.forEach(t => { t._customerName = custMap[t.customer_id] || null; });
+        }
+
+        displayTransactions(transactions);
         
     } catch (error) {
         console.error('Transactions load exception:', error);
@@ -196,7 +213,7 @@ function displayTransactions(transactions) {
     tbody.innerHTML = transactions.map(t => `
         <tr>
             <td>${new Date(t.created_at).toLocaleTimeString('en-PK', {hour: '2-digit', minute: '2-digit'})}</td>
-            <td>${t.customers?.name || 'N/A'}</td>
+            <td>${t._customerName || 'N/A'}</td>
             <td><span class="badge bg-${getTypeBadge(t.transaction_type)}">${t.transaction_type}</span></td>
             <td>Rs. ${formatNumber(t.amount)}</td>
             <td>${t.liters ? formatNumber(t.liters) + ' L' : '-'}</td>

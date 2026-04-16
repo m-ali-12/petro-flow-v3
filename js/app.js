@@ -315,7 +315,7 @@
 
       let txQuery = sb
         .from("transactions")
-        .select(`*, customer:customers(name, sr_no), tank:tanks(fuel_type)`)
+        .select(`*`)
         .order("created_at", { ascending: false })
         .limit(200);
 
@@ -325,9 +325,29 @@
       }
 
       const { data, error } = await txQuery;
-
       if (error) throw error;
-      transactionsCache = data || [];
+
+      const transactions = data || [];
+
+      // Resolve customer names manually (avoids PGRST200 FK join error)
+      const custIds = [...new Set(transactions.map(t => t.customer_id).filter(Boolean))];
+      if (custIds.length > 0) {
+        const { data: custData } = await sb.from("customers").select("id, name, sr_no").in("id", custIds);
+        const custMap = {};
+        (custData || []).forEach(c => custMap[c.id] = c);
+        transactions.forEach(t => { t.customer = custMap[t.customer_id] || null; });
+      }
+
+      // Resolve tank fuel types manually
+      const tankIds = [...new Set(transactions.map(t => t.tank_id).filter(Boolean))];
+      if (tankIds.length > 0) {
+        const { data: tankData } = await sb.from("tanks").select("id, fuel_type").in("id", tankIds);
+        const tankMap = {};
+        (tankData || []).forEach(t => tankMap[t.id] = t);
+        transactions.forEach(t => { t.tank = tankMap[t.tank_id] || null; });
+      }
+
+      transactionsCache = transactions;
       updateTransactionsTable();
       updateRecentTransactions();
     } catch (e) {
