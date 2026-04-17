@@ -119,10 +119,20 @@ CREATE TRIGGER on_auth_user_created
 ALTER TABLE public.companies ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.staff_invites ENABLE ROW LEVEL SECURITY;
 
--- Helper to check if user belongs to a company
+-- Helper to check if user belongs to a company (NON-RECURSIVE)
 CREATE OR REPLACE FUNCTION public.get_my_company()
-RETURNS UUID LANGUAGE sql STABLE AS $$
-  SELECT company_id FROM public.user_profiles WHERE user_id = auth.uid();
+RETURNS UUID LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  RETURN (SELECT company_id FROM public.user_profiles WHERE user_id = auth.uid());
+END;
+$$;
+
+-- Helper to check if user is super_admin (NON-RECURSIVE)
+CREATE OR REPLACE FUNCTION public.check_is_super_admin()
+RETURNS BOOLEAN LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  RETURN EXISTS (SELECT 1 FROM public.user_profiles WHERE user_id = auth.uid() AND role = 'super_admin');
+END;
 $$;
 
 -- Global Isolation Policy (Standard for almost all tables)
@@ -135,9 +145,9 @@ BEGIN
   -- 2. Drop existing
   EXECUTE format('DROP POLICY IF EXISTS isolation_policy ON public.%I', tbl);
   
-  -- 3. Create Isolation Policy
+  -- 3. Create Isolation Policy (Bypasses recursion via Security Definer functions)
   EXECUTE format('CREATE POLICY isolation_policy ON public.%I FOR ALL TO authenticated USING (
-    EXISTS (SELECT 1 FROM public.user_profiles WHERE user_id = auth.uid() AND role = ''super_admin'')
+    public.check_is_super_admin()
     OR company_id = public.get_my_company()
   )', tbl);
 

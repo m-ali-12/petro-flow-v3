@@ -827,8 +827,16 @@ async function addCustomer() {
   const bl = parseFloat($('customer-balance')?.value) || 0;
   if (!sr || !nm || !ct) { alert('Fill SR No, Name, Category'); return; }
   if (allCustomers.find(c => c.sr_no === sr)) { alert(`SR No. ${sr} already exists`); return; }
+  
   try {
-    const row = { sr_no:sr, name:nm, phone:ph||null, category:ct, balance:bl };
+    const row = { 
+        sr_no: sr, 
+        name: nm, 
+        phone: ph || null, 
+        category: ct, 
+        balance: bl,
+        is_company: (ct === 'Company')
+    };
     if (currentUserId) row.user_id = currentUserId;
     const { error } = await sb.from('customers').insert([row]);
     if (error) throw error;
@@ -865,8 +873,17 @@ async function updateCustomer() {
   const bl = parseFloat($('edit-balance').value) || 0;
   if (!sr || !nm || !ct) { alert('Fill all required fields'); return; }
   try {
+    const updateData = { 
+        sr_no: sr, 
+        name: nm, 
+        phone: ph || null, 
+        category: ct, 
+        balance: bl,
+        is_company: (ct === 'Company')
+    };
+    
     const { error } = await sb.from('customers')
-      .update({ sr_no:sr, name:nm, phone:ph||null, category:ct, balance:bl })
+      .update(updateData)
       .eq('id', id);
     if (error) throw error;
     toast('Customer updated!', 'success');
