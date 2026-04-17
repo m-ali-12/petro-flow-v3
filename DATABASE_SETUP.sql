@@ -200,8 +200,15 @@ BEGIN
     -- For now, we leave them NULL so they can be manually assigned or use an invite.
 END $$;
 
--- STEP 7: INITIAL DATA
+-- STEP 7: INITIAL DATA & MISSING SCHEMA PATCHES
 -- ----------------------------------------------------------------
+DO $$ 
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='customers' AND column_name='balance') THEN
+    ALTER TABLE public.customers ADD COLUMN balance NUMERIC(14,2) DEFAULT 0;
+  END IF;
+END $$;
+
 INSERT INTO public.expense_categories (name, icon) VALUES 
 ('Petrol Stock', '⛽'), ('Diesel Stock', '⛽'), ('Electricity Bill', '⚡'), ('Staff Salary', '👷')
 ON CONFLICT (name) DO NOTHING;

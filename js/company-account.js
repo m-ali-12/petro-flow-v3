@@ -1088,7 +1088,7 @@
     if (tbody) tbody.innerHTML = '<tr><td colspan="9" class="text-center py-3 text-muted"><div class="spinner-border spinner-border-sm me-2"></div>Loading...</td></tr>';
     try {
       let q = sb().from('company_transactions')
-        .select('*, members:member_id(name,sr_no)')
+        .select('*, members:customers!company_transactions_member_id_fkey(name,sr_no)')
         .order('txn_date', { ascending:false })
         .order('created_at', { ascending:false });
       if (filters.dateFrom) q = q.gte('txn_date', filters.dateFrom);
