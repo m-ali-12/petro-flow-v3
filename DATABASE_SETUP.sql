@@ -207,6 +207,54 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='customers' AND column_name='balance') THEN
     ALTER TABLE public.customers ADD COLUMN balance NUMERIC(14,2) DEFAULT 0;
   END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='customers' AND column_name='is_company') THEN
+    ALTER TABLE public.customers ADD COLUMN is_company BOOLEAN DEFAULT false;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='customers' AND column_name='company_name') THEN
+    ALTER TABLE public.customers ADD COLUMN company_name TEXT;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='customers' AND column_name='credit_limit') THEN
+    ALTER TABLE public.customers ADD COLUMN credit_limit NUMERIC(14,2) DEFAULT 0;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='tanks' AND column_name='current_stock') THEN
+    ALTER TABLE public.tanks ADD COLUMN current_stock NUMERIC(14,2) DEFAULT 0;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='tanks' AND column_name='capacity') THEN
+    ALTER TABLE public.tanks ADD COLUMN capacity NUMERIC(14,2) DEFAULT 25000;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='transactions' AND column_name='amount') THEN
+    ALTER TABLE public.transactions ADD COLUMN amount NUMERIC(14,2) DEFAULT 0;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='transactions' AND column_name='expense_type') THEN
+    ALTER TABLE public.transactions ADD COLUMN expense_type TEXT;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='transactions' AND column_name='expense_account') THEN
+    ALTER TABLE public.transactions ADD COLUMN expense_account TEXT;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='transactions' AND column_name='notes') THEN
+    ALTER TABLE public.transactions ADD COLUMN notes TEXT;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='transactions' AND column_name='description') THEN
+    ALTER TABLE public.transactions ADD COLUMN description TEXT;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='transactions' AND column_name='transaction_type') THEN
+    ALTER TABLE public.transactions ADD COLUMN transaction_type TEXT DEFAULT 'CashSale';
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='transactions' AND column_name='fuel_type') THEN
+    ALTER TABLE public.transactions ADD COLUMN fuel_type TEXT;
+  END IF;
 END $$;
 
 INSERT INTO public.expense_categories (name, icon) VALUES 
@@ -217,3 +265,51 @@ DO $$
 BEGIN
     RAISE NOTICE 'Multi-Company Isolation Applied Successfully!';
 END $$;
+
+-- STEP 8: RE-CREATE OR UPDATE REPORTING VIEWS
+-- ----------------------------------------------------------------
+-- Stock balance by fuel type
+CREATE OR REPLACE VIEW public.v_stock_by_fuel AS
+SELECT fuel_type, COALESCE(SUM(current_stock),0) AS total_stock, COALESCE(SUM(capacity),0) AS total_capacity
+FROM public.tanks
+GROUP BY fuel_type;
+
+-- Company account summary
+CREATE OR REPLACE VIEW public.v_company_account_summary AS
+SELECT
+  c.id, c.name, c.sr_no, c.credit_limit, c.balance,
+  COALESCE(SUM(CASE WHEN ct.direction='out' AND ct.txn_type='stock_purchase' THEN ct.amount ELSE 0 END),0) AS total_stock_purchased,
+  COALESCE(SUM(CASE WHEN ct.direction='out' AND ct.txn_type='member_usage' THEN ct.amount ELSE 0 END),0) AS total_member_usage,
+  COALESCE(SUM(CASE WHEN ct.direction='out' THEN ct.charges ELSE 0 END),0) AS total_charges,
+  COALESCE(SUM(CASE WHEN ct.direction='in'  THEN ct.amount ELSE 0 END),0) AS total_repaid
+FROM public.customers c
+LEFT JOIN public.company_transactions ct ON ct.company_id = c.id
+WHERE c.is_company = TRUE
+GROUP BY c.id, c.name, c.sr_no, c.credit_limit, c.balance;
+
+-- Expense ledger
+CREATE OR REPLACE VIEW public.v_expense_ledger AS
+SELECT
+  t.id, t.created_at AS expense_date, t.amount, t.description, t.notes,
+  t.transaction_type, t.fuel_type, t.user_id,
+  t.expense_type AS category, t.expense_account AS paid_from,
+  c.name AS account_name, c.sr_no AS account_no
+FROM public.transactions t
+LEFT JOIN public.customers c ON c.id = t.customer_id
+WHERE t.transaction_type = 'Expense';
+
+-- Member usage summary
+CREATE OR REPLACE VIEW public.v_member_usage_summary AS
+SELECT
+  m.id AS member_id, m.name AS member_name, m.sr_no AS member_no,
+  co.name AS company_name,
+  MAX(mcu.fuel_type) AS fuel_type,
+  COUNT(mcu.id) AS usage_count,
+  COALESCE(SUM(mcu.liters),0) AS total_liters,
+  COALESCE(SUM(mcu.liters * mcu.unit_price),0) AS stock_value,
+  COALESCE(SUM(mcu.atm_charges + mcu.misc_charges),0) AS total_charges,
+  COALESCE(SUM(mcu.liters * mcu.unit_price) + SUM(mcu.atm_charges + mcu.misc_charges), 0) AS grand_total
+FROM public.customers m
+JOIN public.member_card_usage mcu ON mcu.member_id = m.id
+JOIN public.customers co ON co.id = mcu.company_id
+GROUP BY m.id, m.name, m.sr_no, co.name;

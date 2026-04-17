@@ -970,7 +970,7 @@
 
   // ── Dropdown instances (set during loadAllDropdowns) ────
   let ddMcu, ddDre, ddPaid;
-
+  let allCustomers = [];
 
   // ============================================================
   // LOAD ALL DROPDOWNS (customers + expense_categories)
@@ -983,6 +983,7 @@
       const { data: customers, error } = await q;
       if (error) throw error;
       const all = customers || [];
+      allCustomers = all;
 
       // 1️⃣ Member Card — all non-Owner customers
       ddMcu = makeSearchDropdown({
@@ -1088,7 +1089,7 @@
     if (tbody) tbody.innerHTML = '<tr><td colspan="9" class="text-center py-3 text-muted"><div class="spinner-border spinner-border-sm me-2"></div>Loading...</td></tr>';
     try {
       let q = sb().from('company_transactions')
-        .select('*, members:customers!member_id(name,sr_no)')
+        .select('*')
         .order('txn_date', { ascending:false })
         .order('created_at', { ascending:false });
       if (filters.dateFrom) q = q.gte('txn_date', filters.dateFrom);
@@ -1096,8 +1097,14 @@
       if (filters.type)     q = q.eq('txn_type', filters.type);
       const { data, error } = await q;
       if (error) throw error;
-      renderTxnTable(data || []);
-      updateTxnTotals(data || []);
+      
+      const txns = data || [];
+      txns.forEach(t => {
+        if (t.member_id) t.members = allCustomers.find(c => c.id === t.member_id);
+      });
+      
+      renderTxnTable(txns);
+      updateTxnTotals(txns);
     } catch (e) {
       if (tbody) tbody.innerHTML = `<tr><td colspan="9" class="text-center text-danger py-3">Error: ${e.message}</td></tr>`;
     }
