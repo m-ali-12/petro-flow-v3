@@ -24,7 +24,7 @@
   window.addEventListener('DOMContentLoaded', () => waitReady(init));
 
   function waitReady(cb, n=0) {
-    if (window.supabaseClient && window.PETRO_AUTH_LOADED) return setTimeout(cb, 400);
+    if (window.supabaseClient && window.PETRO_SESSION_READY) return setTimeout(cb, 400);
     if (n>80) return;
     setTimeout(() => waitReady(cb, n+1), 100);
   }
