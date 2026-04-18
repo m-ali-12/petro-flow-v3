@@ -55,7 +55,8 @@
 
       if (error) throw error;
       if (!data) {
-        console.warn('No settings found. Please run MIGRATION.sql');
+        console.log('No settings row found yet. Will create one on first save.');
+        currentSettings = null;
         return;
       }
 
@@ -190,15 +191,27 @@
         history.push(newEntry);
       }
 
-      const { error } = await sb()
-        .from('settings')
-        .update({
-          petrol_price: petrol,
-          diesel_price: diesel,
-          price_history: history,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', currentSettings.id);
+      let error;
+      if (currentSettings) {
+        ({ error } = await sb()
+          .from('settings')
+          .update({
+            petrol_price: petrol,
+            diesel_price: diesel,
+            price_history: history,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', currentSettings.id));
+      } else {
+        ({ error } = await sb()
+          .from('settings')
+          .insert({
+            petrol_price: petrol,
+            diesel_price: diesel,
+            price_history: history,
+            user_id: window.currentUser?.id
+          }));
+      }
 
       if (error) throw error;
 
@@ -238,15 +251,27 @@
         history.push(newEntry);
       }
 
-      const { error } = await sb()
-        .from('settings')
-        .update({
-          car_mobil_price: car,
-          open_mobil_price: open,
-          mobil_history: history,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', currentSettings.id);
+      let error;
+      if (currentSettings) {
+        ({ error } = await sb()
+          .from('settings')
+          .update({
+            car_mobil_price: car,
+            open_mobil_price: open,
+            mobil_history: history,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', currentSettings.id));
+      } else {
+        ({ error } = await sb()
+          .from('settings')
+          .insert({
+            car_mobil_price: car,
+            open_mobil_price: open,
+            mobil_history: history,
+            user_id: window.currentUser?.id
+          }));
+      }
 
       if (error) throw error;
 
