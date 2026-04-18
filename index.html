@@ -191,36 +191,47 @@
           </a>
         </div>
 
-        <!-- Other Buttons -->
+        <!-- Core Action Buttons -->
         <div class="col-md-3">
-          <a class="btn btn-primary w-100 py-3" href="transactions.html">
+          <a class="btn btn-primary w-100 py-3" href="/transactions.html">
             <i class="bi bi-plus-circle me-2"></i>New Sale
           </a>
         </div>
         <div class="col-md-3">
-          <a class="btn btn-success w-100 py-3" href="transactions.html">
+          <a class="btn btn-success w-100 py-3" href="/transactions.html">
             <i class="bi bi-cash me-2"></i>Vasooli (Debit)
           </a>
         </div>
         <div class="col-md-3">
-          <a class="btn btn-warning w-100 py-3" href="transactions.html">
+          <a class="btn btn-warning w-100 py-3" href="/transactions.html">
             <i class="bi bi-wallet2 me-2"></i>Expense
           </a>
         </div>
-        <div class="col-md-3">
-          <a class="btn btn-info w-100 py-3" href="customers.html">
+        <div class="col-md-3" data-require-role="admin,super_admin,manager">
+          <a class="btn btn-info w-100 py-3" href="/customers.html">
             <i class="bi bi-person-plus me-2"></i>Add Customer
           </a>
         </div>
 
-        <div class="col-md-6">
-          <a class="btn btn-outline-primary w-100 py-3" href="mobil.html">
+        <!-- Role Specific Actions -->
+        <div class="col-md-6" data-require-role="employee">
+          <a class="btn btn-outline-info w-100 py-3" href="/daily-readings.html">
+            <i class="bi bi-speedometer me-2"></i>Daily Machine Readings
+          </a>
+        </div>
+        <div class="col-md-6" data-require-role="employee,manager">
+          <a class="btn btn-outline-primary w-100 py-3" href="/mobil.html">
             <i class="bi bi-droplet-half me-2"></i>Mobil Oil Management
           </a>
         </div>
-        <div class="col-md-6">
-          <a class="btn btn-outline-success w-100 py-3" href="rent.html">
+        <div class="col-md-6" data-require-role="admin,super_admin,manager">
+          <a class="btn btn-outline-success w-100 py-3" href="/rent.html">
             <i class="bi bi-shop me-2"></i>Shop Rent Management
+          </a>
+        </div>
+        <div class="col-md-6" data-require-role="admin,super_admin">
+          <a class="btn btn-outline-danger w-100 py-3" href="/admin-panel.html">
+            <i class="bi bi-shield-lock me-2"></i>Admin Control Panel
           </a>
         </div>
       </div>

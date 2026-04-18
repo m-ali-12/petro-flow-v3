@@ -102,10 +102,10 @@
     if (sessionStorage.getItem('pf_just_logged_in') === 'true') {
       sessionStorage.removeItem('pf_just_logged_in');
       const homeMap = {
-        super_admin: '/admin/admin-panel.html',
-        admin:       '/admin/admin-panel.html',
-        manager:     '/manager/customers.html',
-        employee:    '/index.html' // Dashboard is home for employee
+        super_admin: '/admin-panel.html',
+        admin:       '/admin-panel.html',
+        manager:     '/customers.html',
+        employee:    '/index.html'
       };
       const target = homeMap[profile.role] || '/index.html';
       if (path !== target) window.location.replace(target);
