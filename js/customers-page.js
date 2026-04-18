@@ -700,9 +700,9 @@ function display(list) {
                    c.balance < 0 ? 'text-success fw-bold' : 'text-muted';
     const balTxt = c.balance > 0 ? `Rs. ${fmt(c.balance)} (Udhaar)` :
                    c.balance < 0 ? `Rs. ${fmt(Math.abs(c.balance))} (Advance)` : 'Rs. 0.00';
-    const catCls = c.category === 'Member'  ? 'bg-primary' :
-                   c.category === 'Company' ? 'bg-info text-dark' :
-                   c.category === 'Owner'   ? 'bg-success' : 'bg-secondary';
+    const catCls = c.category === 'Member'  ? 'text-bg-primary' :
+                   c.category === 'Company' ? 'text-bg-warning' :
+                   c.category === 'Owner'   ? 'text-bg-success' : 'text-bg-secondary';
     return `<tr>
       <td>${c.sr_no}</td>
       <td>${c.name}</td>
