@@ -790,8 +790,9 @@ function renderPagination(total, totalPages) {
 // SUMMARY CARDS
 // ════════════════════════════════════════════
 function updateSummary() {
+  const list = getCurrentFilteredList();
   let udhaar = 0, advance = 0, companies = 0;
-  allCustomers.forEach(c => {
+  list.forEach(c => {
     if (c.balance > 0) udhaar += c.balance;
     else if (c.balance < 0) advance += Math.abs(c.balance);
     if (c.category === 'Company') companies++;
@@ -806,12 +807,18 @@ function updateSummary() {
 // ════════════════════════════════════════════
 // SEARCH / FILTER
 // ════════════════════════════════════════════
-function filter() { currentPage = 1; display(getCurrentFilteredList()); }
+function filter() { 
+  currentPage = 1; 
+  display(getCurrentFilteredList()); 
+  updateSummary(); 
+}
+
 function clearFilter() {
   const s=$('search-input');    if(s) s.value='';
   const c=$('filter-category'); if(c) c.value='';
   currentPage = 1;
   display(allCustomers);
+  updateSummary();
 }
 
 // ════════════════════════════════════════════
