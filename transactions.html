@@ -331,6 +331,16 @@
             </select>
           </div>
           <div class="mb-3">
+            <label class="form-label fw-bold">
+              <i class="bi bi-calendar3 me-1 text-primary"></i>Taareekh (Date) *
+              <small class="fw-normal text-muted ms-1">— Purane record ke liye pichli date daalo</small>
+            </label>
+            <input class="form-control" id="sale-date" type="date" required/>
+            <small class="text-warning fw-bold" id="sale-date-warning" style="display:none;">
+              ⚠️ Aap pichle mahine ki date daal rahe hain — Purana record add ho raha hai
+            </small>
+          </div>
+          <div class="mb-3">
             <label class="form-label">Notes (Optional)</label>
             <input class="form-control" id="sale-description" type="text"/>
           </div>
@@ -451,6 +461,16 @@
           <div class="mb-3"><label class="form-label">Pay From Account *</label><select class="form-select" id="expense-account" required><option value="">Select Account</option><option value="Owner">Owner Account</option><option value="Cash">Cash</option><option value="Bank">Bank</option></select></div>
           <div class="mb-3"><label class="form-label">Amount *</label><div class="input-group"><span class="input-group-text">Rs.</span><input class="form-control" id="expense-amount" required step="0.01" type="number"/></div></div>
           <div class="mb-3"><label class="form-label">Description *</label><input class="form-control" id="expense-description" required type="text"/></div>
+          <div class="mb-3">
+            <label class="form-label fw-bold">
+              <i class="bi bi-calendar3 me-1 text-warning"></i>Taareekh (Date) *
+              <small class="fw-normal text-muted ms-1">— Purane expense ke liye pichli date</small>
+            </label>
+            <input class="form-control" id="expense-date" type="date" required/>
+            <small class="text-warning fw-bold" id="expense-date-warning" style="display:none;">
+              ⚠️ Pichle mahine ka record add ho raha hai
+            </small>
+          </div>
         </div>
         <div class="modal-footer">
           <button class="btn btn-secondary" data-bs-dismiss="modal" type="button">Cancel</button>

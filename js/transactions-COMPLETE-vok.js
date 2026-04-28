@@ -2619,15 +2619,20 @@ ${bodyHtml}
     const amount=parseFloat(el('sale-amount')?.value)||0;
     const paymentType=el('sale-payment-type')?.value||'credit';
     const description=el('sale-description')?.value||'';
+    const saleDate=el('sale-date')?.value || new Date().toISOString().split('T')[0];
     if(!fuelType){ alert('Fuel type select karein'); return; }
     if(!amount){ alert('Amount enter karein'); return; }
+    if(!saleDate){ alert('Taareekh (date) enter karein'); return; }
     try{
       const txType=paymentType==='cash'?'Debit':'Credit';
+      // Build ISO timestamp from selected date (use noon time so it doesn't shift by timezone)
+      const createdAt = new Date(saleDate + 'T12:00:00').toISOString();
       const{error}=await supabase.from('transactions').insert([{
         customer_id:parseInt(cust.id), transaction_type:txType,
         charges:amount, liters:liters||null, unit_price:unitPrice||null,
         fuel_type:fuelType,
-        description:`${fuelType} sale${description?' - '+description:''}`
+        description:`${fuelType} sale${description?' - '+description:''}`,
+        created_at: createdAt
       }]);
       if(error) throw error;
       if(txType==='Credit'){
@@ -2635,7 +2640,8 @@ ${bodyHtml}
         await supabase.from('customers').update({balance:newBal}).eq('id',cust.id);
         const lc=allCustomers.find(c=>c.id==cust.id); if(lc) lc.balance=newBal;
       }
-      showToast('success','Kamyab!',`${fuelType} Sale Rs.${fmt(amount)} record ho gayi!`);
+      const dateLabel = saleDate === new Date().toISOString().split('T')[0] ? '' : ` (${saleDate})`;
+      showToast('success','Kamyab!',`${fuelType} Sale Rs.${fmt(amount)} record ho gayi!${dateLabel}`);
       closeModal('newSaleModal'); selectedCustomers.sale=null;
       await loadTransactions();
     }catch(e){ alert('Sale Error: '+e.message); }
@@ -2645,6 +2651,7 @@ ${bodyHtml}
     const cust=selectedCustomers.vasooli;
     if(!cust){ alert('Customer select karein'); return; }
     const amount=parseFloat(el('vasooli-amount')?.value)||0;
+    const vasooliDate=el('vasooli-date')?.value || new Date().toISOString().split('T')[0];
     const month=el('vasooli-month')?.value||'';
     const fuelCat=el('vasooli-fuel-category')?.value||'';
     const desc=el('vasooli-description')?.value||'';
@@ -2654,8 +2661,10 @@ ${bodyHtml}
     if(fuelCat) fullDesc+=` (${fuelCat})`;
     if(desc) fullDesc+=` - ${desc}`;
     try{
+      const createdAt = new Date(vasooliDate + 'T12:00:00').toISOString();
       const{error}=await supabase.from('transactions').insert([{
-        customer_id:parseInt(cust.id), transaction_type:'Debit', charges:amount, description:fullDesc
+        customer_id:parseInt(cust.id), transaction_type:'Debit', charges:amount,
+        description:fullDesc, created_at: createdAt
       }]);
       if(error) throw error;
       const newBal=Math.max(0,(parseFloat(cust.balance)||0)-amount);
@@ -2672,12 +2681,14 @@ ${bodyHtml}
     const description=el('expense-description')?.value||'';
     const expType=el('expense-type')?.value;
     const account=el('expense-account')?.value;
+    const expDate=el('expense-date')?.value || new Date().toISOString().split('T')[0];
     const cust=selectedCustomers.expense;
 
     if(!amount){ alert('Amount enter karein'); return; }
     if(!description){ alert('Description enter karein'); return; }
     if(!expType){ alert('Category select karein'); return; }
     if(!account){ alert('Account select karein'); return; }
+    if(!expDate){ alert('Taareekh (date) enter karein'); return; }
     try{
       let custId=null;
       if(cust){
@@ -2691,10 +2702,12 @@ ${bodyHtml}
           if(ce) throw ce; custId=no.id;
         }
       }
+      const createdAt = new Date(expDate + 'T12:00:00').toISOString();
       const{error}=await supabase.from('transactions').insert([{
         customer_id:custId, transaction_type:'Expense', charges:amount,
         expense_type:expType, expense_account:account,
-        description:`${expType}: ${description} (From: ${account})`
+        description:`${expType}: ${description} (From: ${account})`,
+        created_at: createdAt
       }]);
       if(error) throw error;
       showToast('success','Kamyab!','Expense record ho gaya!');
@@ -2952,6 +2965,38 @@ ${adv.notes?`<div class="row"><span class="lbl">Notes</span><span class="val">${
     if(si){ let deb; si.addEventListener('input',()=>{ clearTimeout(deb); deb=setTimeout(()=>{ activeFilters.search=si.value; applyFilters(); },300); }); }
     el('filter-customer')?.addEventListener('change',function(){ activeFilters.customerId=this.value; applyFilters(); });
     el('advance-filter-status')?.addEventListener('change',loadAdvanceList);
+
+    // ── Auto-set today's date & past-date warning ──────────
+    const today = new Date().toISOString().split('T')[0];
+
+    // Sale date
+    const saleDateEl = el('sale-date');
+    if(saleDateEl){
+      saleDateEl.value = today;
+      saleDateEl.addEventListener('change', function(){
+        const w = el('sale-date-warning');
+        if(w) w.style.display = this.value && this.value < today ? 'block' : 'none';
+      });
+      // Reset to today when modal opens
+      el('newSaleModal')?.addEventListener('show.bs.modal', ()=>{
+        saleDateEl.value = today;
+        const w = el('sale-date-warning'); if(w) w.style.display='none';
+      });
+    }
+
+    // Expense date
+    const expDateEl = el('expense-date');
+    if(expDateEl){
+      expDateEl.value = today;
+      expDateEl.addEventListener('change', function(){
+        const w = el('expense-date-warning');
+        if(w) w.style.display = this.value && this.value < today ? 'block' : 'none';
+      });
+      el('expenseModal')?.addEventListener('show.bs.modal', ()=>{
+        expDateEl.value = today;
+        const w = el('expense-date-warning'); if(w) w.style.display='none';
+      });
+    }
   }
 
   async function init() {
