@@ -2667,7 +2667,7 @@ ${bodyHtml}
         description:fullDesc, created_at: createdAt
       }]);
       if(error) throw error;
-      const newBal=Math.max(0,(parseFloat(cust.balance)||0)-amount);
+      const newBal = (parseFloat(cust.balance)||0) - amount;
       await supabase.from('customers').update({balance:newBal}).eq('id',cust.id);
       const lc=allCustomers.find(c=>c.id==cust.id); if(lc) lc.balance=newBal;
       showToast('success','Kamyab!',`Vasooli Rs.${fmt(amount)} record ho gayi!`);
