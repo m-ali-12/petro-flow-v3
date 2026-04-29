@@ -195,9 +195,9 @@
         <button class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
-        <div class="alert alert-info py-2 mb-3" style="font-size:13px;">
+        <div class="alert alert-warning py-2 mb-3" style="font-size:13px;">
           <i class="bi bi-info-circle me-1"></i>
-          <strong>Yeh kab use karein:</strong> Agar kisi customer ka system se pehle ka khata/pending tha jo abhi system mein nahi hai. Woh amount yahan enter karein.
+          <strong>Yeh kab use karein:</strong> Agar kisi customer ka <strong>pichle mah ka grand total pending</strong> tha — chahe petrol/diesel ka alag hisab na ho — sirf total amount enter karein. System ise us mahine ka opening balance tasleem karega.
         </div>
 
         <!-- Customer Search for old balance -->
@@ -225,14 +225,20 @@
         </div>
 
         <div class="row g-3">
-          <div class="col-md-6">
+          <div class="col-md-4">
+            <label class="form-label fw-semibold">Kis Mahine Ka Pending? <span class="text-danger">*</span></label>
+            <input type="month" id="ob-month" class="form-control" style="border:2px solid #fd7e14;"
+              value="" placeholder="e.g. 2025-12">
+            <small class="text-muted">Woh mahina select karein jis ka pending enter kar rahe hain</small>
+          </div>
+          <div class="col-md-4">
             <label class="form-label fw-semibold">Purana Pending Amount (Rs.) <span class="text-danger">*</span></label>
             <div class="input-group">
               <span class="input-group-text">Rs.</span>
               <input type="number" id="ob-amount" class="form-control" placeholder="0.00" step="0.01" min="0">
             </div>
           </div>
-          <div class="col-md-6">
+          <div class="col-md-4">
             <label class="form-label fw-semibold">Entry Method</label>
             <select id="ob-method" class="form-select">
               <option value="add">➕ Add to Balance (Baqi hai)</option>
@@ -243,14 +249,18 @@
 
         <div class="mb-3 mt-3">
           <label class="form-label">Note / Wajah (Optional)</label>
-          <input type="text" id="ob-note" class="form-control" placeholder="e.g. Jan 2025 tak ka pending, old system se transfer...">
+          <input type="text" id="ob-note" class="form-control" placeholder="e.g. Dec 2025 ka grand total pending, petrol+diesel detail nahi...">
         </div>
 
         <!-- Bulk Entry Table -->
         <hr>
-        <div class="d-flex justify-content-between align-items-center mb-2">
-          <strong><i class="bi bi-table me-1"></i>Bulk Entry — Sabka ek baar</strong>
-          <small class="text-muted">Sirf jinka pending hai woh fill karein</small>
+        <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+          <strong><i class="bi bi-table me-1"></i>Bulk Entry — Sabka ek baar (Sab customers)</strong>
+          <div class="d-flex align-items-center gap-2">
+            <label class="form-label mb-0 fw-semibold" style="font-size:13px;">Mahina:</label>
+            <input type="month" id="bulk-ob-month" class="form-control form-control-sm" style="width:160px;border:2px solid #fd7e14;">
+            <small class="text-muted">Sirf jinka pending hai fill karein</small>
+          </div>
         </div>
         <div style="max-height:300px;overflow-y:auto;">
           <table class="table table-sm table-hover" id="bulk-balance-table">
@@ -259,7 +269,7 @@
                 <th>Sr#</th>
                 <th>Customer Naam</th>
                 <th>Current Balance</th>
-                <th>Naya Balance (Rs.)</th>
+                <th>Pichla Pending (Rs.) — Enter karein</th>
               </tr>
             </thead>
             <tbody id="bulk-balance-tbody">
@@ -696,27 +706,37 @@ ${c.phone?`<div class="info-box" style="background:#cce5ff;border:1px solid #006
     const custId=el('ob-customer-hidden')?.value;
     const amount=parseFloat(el('ob-amount')?.value)||0;
     const method=el('ob-method')?.value||'add';
-    const note=el('ob-note')?.value||'Old pending balance';
+    const note=el('ob-note')?.value||'Purana pending';
+    const monthVal=el('ob-month')?.value; // e.g. '2025-12'
     if(!custId){alert('Customer select karein');return;}
     if(!amount){alert('Amount enter karein');return;}
+    if(!monthVal){alert('Mahina zaroor select karein (Kis mahine ka pending hai?)');return;}
     const cust=allCustomers.find(c=>c.id==custId);
     if(!cust)return;
     const currentBal=parseFloat(cust.balance)||0;
     const newBal=method==='set'?amount:(currentBal+amount);
+    // Build a date = last day of selected month for the record
+    const [yr,mo]=monthVal.split('-').map(Number);
+    const txDate=new Date(yr,mo,0); // last day of that month
+    const monthLabel=txDate.toLocaleDateString('en-PK',{month:'long',year:'numeric'});
+    const desc=`Opening Balance (${monthLabel}): ${note}`;
     try{
       const{error}=await supabase.from('customers').update({balance:newBal}).eq('id',custId);
       if(error)throw error;
-      // Also save as transaction for record
       await supabase.from('transactions').insert([{
         customer_id:parseInt(custId),
         transaction_type:'Credit',
         amount:amount,
-        description:`Opening Balance: ${note}`
+        description:desc,
+        created_at:txDate.toISOString()
       }]);
       cust.balance=newBal;
-      showToast('success','Saved!',`${cust.name} — Balance Rs.${fmt(newBal)} set ho gaya!`);
+      showToast('success','Save Ho Gaya!',`${cust.name} — ${monthLabel} ka pending Rs.${fmt(amount)} daakhil ho gaya!`);
       computeSummary(); renderCustList();
-      if(selectedCust?.id==custId)renderDetail();
+      if(selectedCust?.id==custId){custTxns=allTransactions.filter(t=>t.customer_id===cust.id);renderDetail();}
+      // Reset form
+      el('ob-amount').value=''; el('ob-note').value=''; el('ob-month').value='';
+      clearObCust();
     }catch(e){alert('Error: '+e.message);}
   };
 
@@ -738,25 +758,38 @@ ${c.phone?`<div class="info-box" style="background:#cce5ff;border:1px solid #006
   }
 
   window.saveBulkBalances=async function(){
+    const monthVal=el('bulk-ob-month')?.value;
+    if(!monthVal){alert('Pehle mahina select karein — Kis mahine ka pichla pending enter kar rahe hain?');return;}
+    const [yr,mo]=monthVal.split('-').map(Number);
+    const txDate=new Date(yr,mo,0); // last day of that month
+    const monthLabel=txDate.toLocaleDateString('en-PK',{month:'long',year:'numeric'});
     const inputs=document.querySelectorAll('.bulk-bal-input');
     const updates=[];
     inputs.forEach(inp=>{
       const val=parseFloat(inp.value);
-      if(!isNaN(val)&&val>=0){
+      if(!isNaN(val)&&val>0){
         const cust=allCustomers.find(c=>c.id==inp.dataset.id);
-        if(cust&&val!==parseFloat(cust.balance)) updates.push({id:parseInt(inp.dataset.id),balance:val});
+        if(cust) updates.push({id:parseInt(inp.dataset.id),balance:val,name:cust.name});
       }
     });
-    if(!updates.length){alert('Koi change nahi hua');return;}
-    if(!confirm(updates.length+' customers ka balance update karein?'))return;
+    if(!updates.length){alert('Koi amount nahi likha — jis customer ka pending hai us ki field mein amount likhein');return;}
+    if(!confirm(`${updates.length} customers ka ${monthLabel} wala pichla pending save karein?`))return;
     try{
       for(const u of updates){
         const{error}=await supabase.from('customers').update({balance:u.balance}).eq('id',u.id);
         if(error)throw error;
+        // Insert opening balance transaction with the correct month date
+        await supabase.from('transactions').insert([{
+          customer_id:u.id,
+          transaction_type:'Credit',
+          amount:u.balance,
+          description:`Opening Balance (${monthLabel}) — Pichla pending`,
+          created_at:txDate.toISOString()
+        }]);
         const lc=allCustomers.find(c=>c.id===u.id);
         if(lc)lc.balance=u.balance;
       }
-      showToast('success','Saved!',updates.length+' customers updated!');
+      showToast('success','Save Ho Gaya!',`${updates.length} customers ka ${monthLabel} wala pending daakhil ho gaya!`);
       computeSummary(); renderCustList(); buildBulkTable();
     }catch(e){alert('Error: '+e.message);}
   };

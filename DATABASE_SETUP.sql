@@ -255,6 +255,32 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='transactions' AND column_name='fuel_type') THEN
     ALTER TABLE public.transactions ADD COLUMN fuel_type TEXT;
   END IF;
+
+  -- ── Daily Readings required columns ─────────────────────────
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='transactions' AND column_name='liters') THEN
+    ALTER TABLE public.transactions ADD COLUMN liters NUMERIC(14,3);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='transactions' AND column_name='unit_price') THEN
+    ALTER TABLE public.transactions ADD COLUMN unit_price NUMERIC(14,2);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='transactions' AND column_name='charges') THEN
+    ALTER TABLE public.transactions ADD COLUMN charges NUMERIC(14,2) DEFAULT 0;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='transactions' AND column_name='entry_method') THEN
+    ALTER TABLE public.transactions ADD COLUMN entry_method TEXT;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='transactions' AND column_name='payment_method') THEN
+    ALTER TABLE public.transactions ADD COLUMN payment_method TEXT;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='transactions' AND column_name='cash_advance_id') THEN
+    ALTER TABLE public.transactions ADD COLUMN cash_advance_id BIGINT;
+  END IF;
+
 END $$;
 
 INSERT INTO public.expense_categories (name, icon) VALUES 
