@@ -81,6 +81,39 @@ BEGIN
         -- Set default
         EXECUTE format('ALTER TABLE public.%I ALTER COLUMN company_id SET DEFAULT public.get_my_company()', r.table_name);
     END LOOP;
+
+    -- STEP 2.3: Re-establish Core Relationships (Fix PostgREST joins)
+    -- Ensure transactions link to customers
+    BEGIN
+        ALTER TABLE public.transactions DROP CONSTRAINT IF EXISTS transactions_customer_id_fkey;
+        ALTER TABLE public.transactions ADD CONSTRAINT transactions_customer_id_fkey 
+            FOREIGN KEY (customer_id) REFERENCES public.customers(id) ON DELETE CASCADE;
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+
+    -- Ensure cash_advances link to customers
+    BEGIN
+        ALTER TABLE public.cash_advances DROP CONSTRAINT IF EXISTS cash_advances_customer_id_fkey;
+        ALTER TABLE public.cash_advances ADD CONSTRAINT cash_advances_customer_id_fkey 
+            FOREIGN KEY (customer_id) REFERENCES public.customers(id) ON DELETE CASCADE;
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+
+    -- Ensure company_transactions link to customers (B2B)
+    BEGIN
+        ALTER TABLE public.company_transactions DROP CONSTRAINT IF EXISTS company_transactions_b2b_company_id_fkey;
+        ALTER TABLE public.company_transactions ADD CONSTRAINT company_transactions_b2b_company_id_fkey 
+            FOREIGN KEY (b2b_company_id) REFERENCES public.customers(id) ON DELETE CASCADE;
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+
+    -- Ensure member_card_usage link to customers (B2B)
+    BEGIN
+        ALTER TABLE public.member_card_usage DROP CONSTRAINT IF EXISTS member_card_usage_b2b_company_id_fkey;
+        ALTER TABLE public.member_card_usage ADD CONSTRAINT member_card_usage_b2b_company_id_fkey 
+            FOREIGN KEY (b2b_company_id) REFERENCES public.customers(id) ON DELETE CASCADE;
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
 END $$;
 
 -- STEP 3: REBUILD IDENTITY HELPERS
