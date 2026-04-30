@@ -107,13 +107,43 @@ BEGIN
     EXCEPTION WHEN OTHERS THEN NULL;
     END;
 
-    -- Ensure member_card_usage link to customers (B2B)
-    BEGIN
-        ALTER TABLE public.member_card_usage DROP CONSTRAINT IF EXISTS member_card_usage_b2b_company_id_fkey;
-        ALTER TABLE public.member_card_usage ADD CONSTRAINT member_card_usage_b2b_company_id_fkey 
-            FOREIGN KEY (b2b_company_id) REFERENCES public.customers(id) ON DELETE CASCADE;
-    EXCEPTION WHEN OTHERS THEN NULL;
-    END;
+    -- STEP 2.4: Populate NULL company_id for existing records
+    -- This ensures that current data becomes visible to the owner/admin
+    FOR r IN (
+        SELECT c.table_name FROM information_schema.columns c
+        JOIN information_schema.tables t ON t.table_name = c.table_name AND t.table_schema = c.table_schema
+        WHERE c.table_schema = 'public' 
+        AND c.column_name = 'company_id'
+        AND t.table_type = 'BASE TABLE'
+    ) LOOP
+        -- Only attempt join if user_id column exists in this table
+        IF EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = 'public' AND table_name = r.table_name AND column_name = 'user_id'
+        ) THEN
+            EXECUTE format('
+                UPDATE public.%I t
+                SET company_id = p.company_id
+                FROM public.user_profiles p
+                WHERE t.company_id IS NULL 
+                AND t.user_id = p.user_id 
+                AND p.company_id IS NOT NULL', r.table_name);
+        END IF;
+            
+        -- Fallback: If still NULL, assign to the first company found
+        EXECUTE format('
+            UPDATE public.%I 
+            SET company_id = (SELECT id FROM public.companies LIMIT 1)
+            WHERE company_id IS NULL', r.table_name);
+    END LOOP;
+
+    -- STEP 2.5: Auto-Activate existing Admins and assign first company if missing
+    UPDATE public.user_profiles 
+    SET status = 'active', 
+        company_id = COALESCE(company_id, (SELECT id FROM public.companies LIMIT 1))
+    WHERE role IN ('admin', 'super_admin') 
+    AND (status != 'active' OR company_id IS NULL);
+
 END $$;
 
 -- STEP 3: REBUILD IDENTITY HELPERS
