@@ -256,10 +256,18 @@
         <hr>
         <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
           <strong><i class="bi bi-table me-1"></i>Bulk Entry — Sabka ek baar (Sab customers)</strong>
-          <div class="d-flex align-items-center gap-2">
-            <label class="form-label mb-0 fw-semibold" style="font-size:13px;">Mahina:</label>
-            <input type="month" id="bulk-ob-month" class="form-control form-control-sm" style="width:160px;border:2px solid #fd7e14;">
-            <small class="text-muted">Sirf jinka pending hai fill karein</small>
+          <div class="d-flex align-items-center gap-3">
+            <div class="form-check form-switch mb-0">
+              <input class="form-check-input" type="checkbox" id="bulk-filter-pending" checked onchange="buildBulkTable()">
+              <label class="form-check-label fw-semibold" for="bulk-filter-pending" style="font-size:13px;">Sirf Pending Dikhao</label>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+              <label class="form-label mb-0 fw-semibold" style="font-size:13px;">Mahina:</label>
+              <input type="month" id="bulk-ob-month" class="form-control form-control-sm" style="width:160px;border:2px solid #fd7e14;">
+            </div>
+            <button class="btn btn-sm btn-dark" onclick="fillAllBulkBalances()">
+              <i class="bi bi-magic me-1"></i> Sab Fill Karein (Auto)
+            </button>
           </div>
         </div>
         <div style="max-height:300px;overflow-y:auto;">
@@ -274,7 +282,7 @@
               </tr>
             </thead>
             <tbody id="bulk-balance-tbody">
-              <tr><td colspan="4" class="text-center text-muted py-2">Loading customers...</td></tr>
+              <tr><td colspan="5" class="text-center text-muted py-2">Loading customers...</td></tr>
             </tbody>
           </table>
         </div>
@@ -746,7 +754,19 @@ ${c.phone?`<div class="info-box" style="background:#cce5ff;border:1px solid #006
     const tbody=el('bulk-balance-tbody');
     if(!tbody)return;
     const globalMonth = el('bulk-ob-month')?.value || '';
-    tbody.innerHTML=allCustomers.map(c=>{
+    const onlyPending = el('bulk-filter-pending')?.checked || false;
+    
+    let list = allCustomers;
+    if(onlyPending) {
+      list = list.filter(c => (parseFloat(c.balance)||0) > 0);
+    }
+
+    if(!list.length) {
+      tbody.innerHTML = `<tr><td colspan="5" class="text-center py-3 text-muted">Koi matching customer nahi mila</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML=list.map(c=>{
       const bal=parseFloat(c.balance)||0;
       return `<tr>
         <td>${c.sr_no||'-'}</td>
@@ -754,11 +774,24 @@ ${c.phone?`<div class="info-box" style="background:#cce5ff;border:1px solid #006
         <td style="color:${bal>0?'#dc3545':'#198754'};font-weight:700;">Rs.${fmt(bal)}</td>
         <td><input type="month" class="form-control form-control-sm bulk-month-input" data-id="${c.id}" value="${globalMonth}"></td>
         <td><input type="number" class="form-control form-control-sm bulk-bal-input" data-id="${c.id}"
-          placeholder="0.00" step="0.01" value="${bal>0?bal:''}"
+          placeholder="0.00" step="0.01" value=""
           style="border:1px solid ${bal>0?'#dc3545':'#ccc'};"></td>
       </tr>`;
     }).join('');
   }
+
+  window.fillAllBulkBalances = function() {
+    const inputs = document.querySelectorAll('.bulk-bal-input');
+    inputs.forEach(inp => {
+      const custId = inp.dataset.id;
+      const cust = allCustomers.find(c => c.id == custId);
+      if(cust) {
+        const bal = parseFloat(cust.balance) || 0;
+        if(bal > 0) inp.value = bal;
+      }
+    });
+    showToast('info', 'Auto Fill Done', 'Sab customers ka current balance fill ho gaya hai.');
+  };
 
   window.saveBulkBalances=async function(){
     const balInputs=document.querySelectorAll('.bulk-bal-input');
