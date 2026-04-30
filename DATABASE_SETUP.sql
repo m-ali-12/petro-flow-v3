@@ -77,21 +77,30 @@ CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 DECLARE
     target_company_id UUID;
-    target_role TEXT := 'employee';
+    target_role TEXT;
+    target_full_name TEXT;
     inv_id BIGINT;
 BEGIN
-    -- 1. Check if user is invited
+    -- 1. Extract metadata from Auth
+    target_full_name := NEW.raw_user_meta_data->>'full_name';
+    target_role      := NEW.raw_user_meta_data->>'role';
+
+    -- 2. Check if user is invited (Invites override requested role)
     SELECT id, company_id, role INTO inv_id, target_company_id, target_role
     FROM public.staff_invites WHERE email = NEW.email;
 
-    -- 2. Create profile
-    INSERT INTO public.user_profiles (user_id, email, role, status, company_id)
-    VALUES (NEW.id, NEW.email, target_role, 'pending', target_company_id)
-    ON CONFLICT (user_id) DO UPDATE SET email = EXCLUDED.email;
+    -- Default role if not provided or invited
+    IF target_role IS NULL THEN target_role := 'employee'; END IF;
 
-    -- 3. If Admin and NO company yet, create one
+    -- 3. Create profile
+    INSERT INTO public.user_profiles (user_id, email, full_name, role, status, company_id)
+    VALUES (NEW.id, NEW.email, target_full_name, target_role, 'pending', target_company_id)
+    ON CONFLICT (user_id) DO UPDATE SET 
+        email = EXCLUDED.email,
+        full_name = COALESCE(EXCLUDED.full_name, public.user_profiles.full_name);
+
+    -- 4. If Admin and NO company yet, create one
     IF target_role = 'admin' AND target_company_id IS NULL THEN
-        -- We will assign the company later or use a default
         INSERT INTO public.companies (name, owner_id)
         VALUES ('My Petrol Pump', NEW.id)
         RETURNING id INTO target_company_id;
@@ -99,7 +108,7 @@ BEGIN
         UPDATE public.user_profiles SET company_id = target_company_id WHERE user_id = NEW.id;
     END IF;
 
-    -- 4. Mark invite as accepted
+    -- 5. Mark invite as accepted
     IF inv_id IS NOT NULL THEN
         DELETE FROM public.staff_invites WHERE id = inv_id;
     END IF;

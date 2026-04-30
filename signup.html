@@ -122,7 +122,16 @@
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Creating account...';
     try {
-      const { data, error } = await window.supabaseClient.auth.signUp({ email, password });
+      const { data, error } = await window.supabaseClient.auth.signUp({ 
+        email, 
+        password,
+        options: {
+          data: {
+            full_name: fullName,
+            role: role
+          }
+        }
+      });
       if (error) throw error;
       
       // NOTE: User Profile is now created automatically by the database trigger
