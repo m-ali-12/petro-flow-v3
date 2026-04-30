@@ -216,11 +216,18 @@ async function submitStock() {
 }
 
 async function updateTankStock(fuelType, liters, action = 'add') {
+    const profile = window.currentUserProfile;
+    if (!profile || !profile.company_id) {
+        console.error('No company ID found for stock update');
+        return;
+    }
+
     const { data: tank } = await window.supabaseClient
         .from('tanks')
         .select('current_stock')
         .eq('fuel_type', fuelType)
-        .single();
+        .eq('company_id', profile.company_id)
+        .maybeSingle();
 
     const cur = parseFloat(tank?.current_stock || 0);
     const newStock = action === 'add'
@@ -229,8 +236,13 @@ async function updateTankStock(fuelType, liters, action = 'add') {
 
     await window.supabaseClient
         .from('tanks')
-        .upsert({ fuel_type: fuelType, current_stock: newStock, last_updated: new Date().toISOString() },
-                 { onConflict: 'fuel_type' });
+        .upsert({ 
+            fuel_type: fuelType, 
+            current_stock: newStock, 
+            last_updated: new Date().toISOString(),
+            company_id: profile.company_id,
+            name: `${fuelType} Tank`
+        }, { onConflict: 'company_id,fuel_type' });
 }
 
 // =============================================
@@ -256,10 +268,14 @@ async function loadHistory() {
 
         if (filterMonth) {
             const [yr, mo] = filterMonth.split('-');
-            const start = `${yr}-${mo}-01T00:00:00`;
-            const lastD  = new Date(parseInt(yr), parseInt(mo), 0).getDate();
-            const end   = `${yr}-${mo}-${String(lastD).padStart(2,'0')}T23:59:59`;
-            query = query.gte('created_at', start).lte('created_at', end);
+            const start = `${yr}-${mo}-01`;
+            const lastD = new Date(parseInt(yr), parseInt(mo), 0).getDate();
+            const end   = `${yr}-${mo}-${String(lastD).padStart(2,'0')}`;
+            
+            // Filter by purchase_date first, fallback to created_at if missing
+            // Since we want to see backdated entries in the month they were recorded for
+            query = query.or(`purchase_date.gte.${start},and(purchase_date.is.null,created_at.gte.${start}T00:00:00)`)
+                         .or(`purchase_date.lte.${end},and(purchase_date.is.null,created_at.lte.${end}T23:59:59)`);
         }
 
         const { data, error } = await query;

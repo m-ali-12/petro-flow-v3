@@ -36,22 +36,50 @@ BEGIN
         ALTER TABLE public.user_profiles ADD COLUMN company_id UUID REFERENCES public.companies(id);
     END IF;
 
-    -- 2. Loop through all critical tables and add company_id
+    -- STEP 2.1: Resolve Naming Conflicts (B2B companies vs Tenants)
+    -- Some tables used 'company_id' to refer to a B2B customer (BIGINT). 
+    -- We need to rename these to 'b2b_company_id' to free up 'company_id' for multi-tenancy.
     FOR r IN (
-        SELECT table_name 
-        FROM information_schema.tables 
+        SELECT table_name, column_name 
+        FROM information_schema.columns 
         WHERE table_schema = 'public' 
+        AND column_name = 'company_id'
+        AND data_type IN ('integer', 'bigint')
+        AND table_name IN ('company_transactions', 'company_repayments', 'member_card_usage')
+    ) LOOP
+        BEGIN
+            EXECUTE format('ALTER TABLE public.%I RENAME COLUMN company_id TO b2b_company_id', r.table_name);
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END;
+    END LOOP;
+
+    -- STEP 2.2: Ensure company_id is UUID for all isolated tables
+    FOR r IN (
+        SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' 
         AND table_name IN (
             'customers', 'transactions', 'expense_categories', 'cash_advances', 
             'company_transactions', 'company_repayments', 'mobil_sales', 'mobil_stock',
             'mobil_transactions', 'rent_payments', 'settings', 'shops', 'stock_entries',
             'stock_purchases', 'tanks', 'expense_types', 'member_card_usage', 'mobil_arrivals',
-            'mobil_product_prices', 'mobil_products', 'price_history', 'banks', 'cash_deposits'
+            'bank_accounts', 'banks', 'cash_deposits', 'vendor_payments'
         )
     ) LOOP
+        -- If it exists but is NOT UUID, drop it (we'll recreate it correctly)
+        IF EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = 'public' AND table_name = r.table_name AND column_name = 'company_id'
+            AND data_type <> 'uuid'
+        ) THEN
+            EXECUTE format('ALTER TABLE public.%I DROP COLUMN company_id CASCADE', r.table_name);
+        END IF;
+
+        -- Now add it as UUID if missing
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = r.table_name AND column_name = 'company_id') THEN
             EXECUTE format('ALTER TABLE public.%I ADD COLUMN company_id UUID REFERENCES public.companies(id)', r.table_name);
         END IF;
+        
+        -- Set default
+        EXECUTE format('ALTER TABLE public.%I ALTER COLUMN company_id SET DEFAULT public.get_my_company()', r.table_name);
     END LOOP;
 END $$;
 
@@ -93,8 +121,16 @@ BEGIN
     IF target_role IS NULL THEN target_role := 'employee'; END IF;
 
     -- 3. Create profile
+    -- AUTO-ACTIVATE Admin: First user of a company should be active
     INSERT INTO public.user_profiles (user_id, email, full_name, role, status, company_id)
-    VALUES (NEW.id, NEW.email, target_full_name, target_role, 'pending', target_company_id)
+    VALUES (
+        NEW.id, 
+        NEW.email, 
+        target_full_name, 
+        target_role, 
+        CASE WHEN target_role = 'admin' THEN 'active' ELSE 'pending' END, 
+        target_company_id
+    )
     ON CONFLICT (user_id) DO UPDATE SET 
         email = EXCLUDED.email,
         full_name = COALESCE(EXCLUDED.full_name, public.user_profiles.full_name);
@@ -105,7 +141,7 @@ BEGIN
         VALUES ('My Petrol Pump', NEW.id)
         RETURNING id INTO target_company_id;
         
-        UPDATE public.user_profiles SET company_id = target_company_id WHERE user_id = NEW.id;
+        UPDATE public.user_profiles SET company_id = target_company_id, status = 'active' WHERE user_id = NEW.id;
     END IF;
 
     -- 5. Mark invite as accepted
@@ -173,6 +209,12 @@ SELECT public._apply_isolation_v1('customers');
 SELECT public._apply_isolation_v1('transactions');
 SELECT public._apply_isolation_v1('tanks');
 SELECT public._apply_isolation_v1('banks');
+SELECT public._apply_isolation_v1('stock_entries');
+SELECT public._apply_isolation_v1('stock_purchases');
+
+-- Fix tanks uniqueness
+ALTER TABLE public.tanks DROP CONSTRAINT IF EXISTS tanks_fuel_type_company_unique;
+ALTER TABLE public.tanks ADD CONSTRAINT tanks_fuel_type_company_unique UNIQUE (company_id, fuel_type);
 
 -- Special Policy for Companies (Isolated by ID/Owner)
 ALTER TABLE public.companies ENABLE ROW LEVEL SECURITY;
@@ -303,24 +345,34 @@ END $$;
 
 -- STEP 8: RE-CREATE OR UPDATE REPORTING VIEWS
 -- ----------------------------------------------------------------
--- Stock balance by fuel type
+-- We drop them first to avoid "cannot change name of view column" errors
+DROP VIEW IF EXISTS public.v_stock_by_fuel CASCADE;
+DROP VIEW IF EXISTS public.v_company_account_summary CASCADE;
+DROP VIEW IF EXISTS public.v_expense_ledger CASCADE;
+DROP VIEW IF EXISTS public.v_member_usage_summary CASCADE;
+
+-- Stock balance by fuel type (Isolated)
 CREATE OR REPLACE VIEW public.v_stock_by_fuel AS
-SELECT fuel_type, COALESCE(SUM(current_stock),0) AS total_stock, COALESCE(SUM(capacity),0) AS total_capacity
+SELECT 
+    company_id, 
+    fuel_type, 
+    COALESCE(SUM(current_stock),0) AS total_stock, 
+    COALESCE(SUM(capacity),0) AS total_capacity
 FROM public.tanks
-GROUP BY fuel_type;
+GROUP BY company_id, fuel_type;
 
 -- Company account summary
 CREATE OR REPLACE VIEW public.v_company_account_summary AS
-SELECT
-  c.id, c.name, c.sr_no, c.credit_limit, c.balance,
-  COALESCE(SUM(CASE WHEN ct.direction='out' AND ct.txn_type='stock_purchase' THEN ct.amount ELSE 0 END),0) AS total_stock_purchased,
-  COALESCE(SUM(CASE WHEN ct.direction='out' AND ct.txn_type='member_usage' THEN ct.amount ELSE 0 END),0) AS total_member_usage,
-  COALESCE(SUM(CASE WHEN ct.direction='out' THEN ct.charges ELSE 0 END),0) AS total_charges,
-  COALESCE(SUM(CASE WHEN ct.direction='in'  THEN ct.amount ELSE 0 END),0) AS total_repaid
+SELECT 
+  c.id, c.name, c.company_id AS tenant_id,
+  COALESCE(SUM(ct.amount), 0) AS total_amount,
+  COALESCE(SUM(cr.amount), 0) AS total_repayments,
+  COALESCE(SUM(ct.amount), 0) - COALESCE(SUM(cr.amount), 0) AS balance
 FROM public.customers c
-LEFT JOIN public.company_transactions ct ON ct.company_id = c.id
-WHERE c.is_company = TRUE
-GROUP BY c.id, c.name, c.sr_no, c.credit_limit, c.balance;
+LEFT JOIN public.company_transactions ct ON ct.b2b_company_id = c.id
+LEFT JOIN public.company_repayments cr ON cr.b2b_company_id = c.id
+WHERE c.is_company = true
+GROUP BY c.id, c.name, c.company_id;
 
 -- Expense ledger
 CREATE OR REPLACE VIEW public.v_expense_ledger AS
@@ -337,7 +389,8 @@ WHERE t.transaction_type = 'Expense';
 CREATE OR REPLACE VIEW public.v_member_usage_summary AS
 SELECT
   m.id AS member_id, m.name AS member_name, m.sr_no AS member_no,
-  co.name AS company_name,
+  m.company_id AS tenant_id,
+  co.name AS b2b_company_name,
   MAX(mcu.fuel_type) AS fuel_type,
   COUNT(mcu.id) AS usage_count,
   COALESCE(SUM(mcu.liters),0) AS total_liters,
@@ -346,5 +399,5 @@ SELECT
   COALESCE(SUM(mcu.liters * mcu.unit_price) + SUM(mcu.atm_charges + mcu.misc_charges), 0) AS grand_total
 FROM public.customers m
 JOIN public.member_card_usage mcu ON mcu.member_id = m.id
-JOIN public.customers co ON co.id = mcu.company_id
-GROUP BY m.id, m.name, m.sr_no, co.name;
+JOIN public.customers co ON co.id = mcu.b2b_company_id
+GROUP BY m.id, m.name, m.sr_no, m.company_id, co.name;
