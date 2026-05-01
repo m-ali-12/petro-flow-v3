@@ -54,7 +54,7 @@
     <div class="col-6 col-md-3">
       <div class="card border-success shadow-sm">
         <div class="card-body text-center py-2">
-          <div class="text-muted small">Total Vasooli (Aayi)</div>
+          <div class="text-muted small">Total Credit (Jama)</div>
           <div class="text-success fw-bold fs-5" id="sum-total-vasooli">Rs. 0</div>
           <small class="text-muted" id="sum-vasooli-count">Collected</small>
         </div>
@@ -72,7 +72,7 @@
     <div class="col-6 col-md-3">
       <div class="card border-primary shadow-sm">
         <div class="card-body text-center py-2">
-          <div class="text-muted small">Total Sale (Credit)</div>
+          <div class="text-muted small">Total Debit (Udhaar)</div>
           <div class="text-primary fw-bold fs-5" id="sum-total-sale">Rs. 0</div>
           <small class="text-muted">Udhaar sales</small>
         </div>
@@ -139,9 +139,9 @@
                 <thead>
                   <tr style="background:#f8f9fa;">
                     <th style="padding:10px 14px;">Mahina</th>
-                    <th style="padding:10px 14px;text-align:right;">Sale (Udhaar)</th>
-                    <th style="padding:10px 14px;text-align:right;">Vasooli</th>
-                    <th style="padding:10px 14px;text-align:right;">Advance</th>
+                    <th style="padding:10px 14px;text-align:right;">Debit (Udhaar)</th>
+                    <th style="padding:10px 14px;text-align:right;">Credit (Jama)</th>
+                    <th style="padding:10px 14px;text-align:right;">Advance Out</th>
                     <th style="padding:10px 14px;text-align:right;">Month Pending</th>
                     <th style="padding:10px 14px;text-align:center;">Status</th>
                   </tr>
@@ -167,15 +167,18 @@
             <div class="table-responsive">
               <table class="table table-sm mb-0">
                 <thead>
-                  <tr style="background:#f8f9fa;">
-                    <th style="padding:8px 12px;">Date</th>
-                    <th style="padding:8px 12px;">Type</th>
-                    <th style="padding:8px 12px;">Amount</th>
-                    <th style="padding:8px 12px;">Description</th>
+                  <tr style="background:#f0f4ff;">
+                    <th style="padding:10px 12px;">Date</th>
+                    <th style="padding:10px 12px;">Doc Type</th>
+                    <th style="padding:10px 12px;">Reference</th>
+                    <th style="padding:10px 12px;">Description</th>
+                    <th style="padding:10px 12px;text-align:right;">Debit (Udhaar)</th>
+                    <th style="padding:10px 12px;text-align:right;">Credit (Jama)</th>
+                    <th style="padding:10px 12px;text-align:right;">Balance</th>
                   </tr>
                 </thead>
                 <tbody id="tx-detail-tbody">
-                  <tr><td colspan="4" class="text-center py-3 text-muted">—</td></tr>
+                  <tr><td colspan="7" class="text-center py-3 text-muted">—</td></tr>
                 </tbody>
               </table>
             </div>
@@ -225,24 +228,27 @@
         </div>
 
         <div class="row g-3">
-          <div class="col-md-4">
-            <label class="form-label fw-semibold">Kis Mahine Ka Pending? <span class="text-danger">*</span></label>
+          <div class="col-md-3">
+            <label class="form-label fw-semibold">Kis Mahine Ka? <span class="text-danger">*</span></label>
             <input type="month" id="ob-month" class="form-control" style="border:2px solid #fd7e14;"
-              value="" placeholder="e.g. 2025-12">
-            <small class="text-muted">Woh mahina select karein jis ka pending enter kar rahe hain</small>
+              value="" placeholder="2026-01">
           </div>
-          <div class="col-md-4">
-            <label class="form-label fw-semibold">Purana Pending Amount (Rs.) <span class="text-danger">*</span></label>
-            <div class="input-group">
-              <span class="input-group-text">Rs.</span>
-              <input type="number" id="ob-amount" class="form-control" placeholder="0.00" step="0.01" min="0">
-            </div>
+          <div class="col-md-3">
+            <label class="form-label fw-semibold">Amount (Rs.) <span class="text-danger">*</span></label>
+            <input type="number" id="ob-amount" class="form-control" placeholder="0.00" step="0.01">
           </div>
-          <div class="col-md-4">
-            <label class="form-label fw-semibold">Entry Method</label>
+          <div class="col-md-3">
+            <label class="form-label fw-semibold">Type <span class="text-danger">*</span></label>
+            <select id="ob-tx-type" class="form-select" style="border:2px solid #0d6efd;">
+              <option value="Credit">Debit (Udhaar/Baqi)</option>
+              <option value="Debit">Credit (Advance/Jama)</option>
+            </select>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label fw-semibold">Method</label>
             <select id="ob-method" class="form-select">
-              <option value="add">➕ Add to Balance (Baqi hai)</option>
-              <option value="set">📌 Set as Balance (Fixed amount)</option>
+              <option value="add">➕ Add to Balance</option>
+              <option value="set">📌 Set as Balance</option>
             </select>
           </div>
         </div>
@@ -277,8 +283,9 @@
                 <th>Sr#</th>
                 <th>Customer Naam</th>
                 <th>Current Balance</th>
-                <th>Mahina (Month)</th>
-                <th>Pichla Pending (Rs.) — Enter karein</th>
+                <th>Month</th>
+                <th>Type</th>
+                <th>Amount (Rs.)</th>
               </tr>
             </thead>
             <tbody id="bulk-balance-tbody">
@@ -343,7 +350,7 @@
     try{
       const [{data:custs},{data:txns}] = await Promise.all([
         supabase.from('customers').select('*').order('sr_no'),
-        supabase.from('transactions').select('*, customers(name,sr_no)').order('id',{ascending:false}).limit(2000)
+        supabase.from('transactions').select('*, customers(name,sr_no)').order('created_at',{ascending:true})
       ]);
       allCustomers = (custs||[]).filter(c => c.category !== 'Owner');
       allTransactions = txns||[];
@@ -454,15 +461,15 @@
       </div>
       <div class="row g-2 mt-2">
         <div class="col-6 col-md-3">
-          <div style="background:#d4edda;border-radius:8px;padding:8px 12px;text-align:center;">
-            <div style="font-size:11px;color:#555;">Total Sale (Credit)</div>
-            <div style="font-weight:700;color:#198754;">Rs.${fmt(totalSale)}</div>
+          <div style="background:#fdecea;border-radius:8px;padding:8px 12px;text-align:center;">
+            <div style="font-size:11px;color:#555;">Total Debit (Udhaar)</div>
+            <div style="font-weight:700;color:#dc3545;">Rs.${fmt(totalSale)}</div>
           </div>
         </div>
         <div class="col-6 col-md-3">
-          <div style="background:#cce5ff;border-radius:8px;padding:8px 12px;text-align:center;">
-            <div style="font-size:11px;color:#555;">Total Vasooli</div>
-            <div style="font-weight:700;color:#0d6efd;">Rs.${fmt(totalVasooli)}</div>
+          <div style="background:#eafaf1;border-radius:8px;padding:8px 12px;text-align:center;">
+            <div style="font-size:11px;color:#555;">Total Credit (Jama)</div>
+            <div style="font-weight:700;color:#198754;">Rs.${fmt(totalVasooli)}</div>
           </div>
         </div>
         <div class="col-6 col-md-3">
@@ -565,39 +572,61 @@
     el('tx-detail-title').innerHTML=`<i class="bi bi-list-ul me-1"></i>Transactions — ${new Date(key+'-01').toLocaleDateString('en-PK',{month:'long',year:'numeric'})}`;
   };
 
-  // ── Transaction Detail ────────────────────────────────────
+  // ── Transaction Detail (Paper Format) ────────────────────
   window.renderTxDetail=function(){
     const mFilter=el('tx-month-filter')?.value||'';
     let txns=custTxns;
-    if(mFilter){
-      txns=txns.filter(t=>{
-        if(!t.created_at)return false;
-        const d=new Date(t.created_at);
-        const key=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-        return key===mFilter;
-      });
-    }
+    
+    // Sort transactions by date for running balance
+    txns.sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
+
     const tbody=el('tx-detail-tbody');
-    if(!txns.length){
-      tbody.innerHTML='<tr><td colspan="4" class="text-center text-muted py-3">Koi transaction nahi</td></tr>';
+    let html='';
+    let runningBal=0;
+
+    const rows = txns.map(t=>{
+      const amt=parseFloat(t.amount || t.charges)||0;
+      let debit=0, credit=0;
+      
+      // Paper Logic: 
+      // Credit (Sale) -> Debit Column (+)
+      // Debit (Vasooli) -> Credit Column (-)
+      // Advance -> Debit Column (+)
+      if(t.transaction_type==='Credit' || t.transaction_type==='Advance') {
+        debit = amt; runningBal += amt;
+      } else if(t.transaction_type==='Debit') {
+        credit = amt; runningBal -= amt;
+      }
+
+      const d=t.created_at?new Date(t.created_at).toLocaleDateString('en-PK'):'—';
+      const docType = t.transaction_type === 'Credit' ? 'FL' : t.transaction_type === 'Debit' ? 'RV' : t.transaction_type === 'Advance' ? 'AD' : '—';
+      
+      return {
+        key: t.created_at ? `${new Date(t.created_at).getFullYear()}-${String(new Date(t.created_at).getMonth()+1).padStart(2,'0')}` : '',
+        row: `<tr>
+          <td style="padding:8px 12px;">${d}</td>
+          <td style="padding:8px 12px;text-align:center;"><span class="badge bg-light text-dark border">${docType}</span></td>
+          <td style="padding:8px 12px;font-size:11px;">#${t.id}</td>
+          <td style="padding:8px 12px;font-size:12px;color:#555;">${t.description||'—'}</td>
+          <td style="padding:8px 12px;text-align:right;font-weight:700;color:#198754;">${debit>0?'Rs.'+fmt(debit):'—'}</td>
+          <td style="padding:8px 12px;text-align:right;font-weight:700;color:#0d6efd;">${credit>0?'Rs.'+fmt(credit):'—'}</td>
+          <td style="padding:8px 12px;text-align:right;font-weight:800;color:${runningBal>0?'#dc3545':'#198754'};">Rs.${fmt(Math.abs(runningBal))}</td>
+        </tr>`
+      };
+    });
+
+    // Apply month filter after calculating running balance if needed, 
+    // but usually user wants to see the whole khata with running balance.
+    // If filter is active, we only show filtered rows but balance is based on history.
+    let filteredRows = rows;
+    if(mFilter) filteredRows = rows.filter(r => r.key === mFilter);
+
+    if(!filteredRows.length){
+      tbody.innerHTML='<tr><td colspan="7" class="text-center text-muted py-3">Koi transaction nahi</td></tr>';
       return;
     }
-    const tStyles={'Credit':'background:#198754;','Debit':'background:#0d6efd;','Advance':'background:#6f42c1;','Expense':'background:#ffc107;color:#212529;'};
-    const tLabels={Credit:'Sale',Debit:'Vasooli',Advance:'Advance',Expense:'Expense'};
-    tbody.innerHTML=txns.map(t=>{
-      const d=t.created_at?new Date(t.created_at).toLocaleDateString('en-PK'):'—';
-      const s=tStyles[t.transaction_type]||'background:#6c757d;';
-      const lbl=tLabels[t.transaction_type]||t.transaction_type;
-      const amt=parseFloat(t.amount)||0;
-      return `<tr>
-        <td style="padding:8px 12px;">${d}</td>
-        <td style="padding:8px 12px;"><span style="${s}color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">${lbl}</span></td>
-        <td style="padding:8px 12px;font-weight:700;color:${t.transaction_type==='Debit'?'#0d6efd':t.transaction_type==='Credit'?'#dc3545':'#555'};">
-          ${t.transaction_type==='Debit'?'−':'+'} Rs.${fmt(amt)}
-        </td>
-        <td style="padding:8px 12px;font-size:12px;color:#555;">${t.description||'—'}</td>
-      </tr>`;
-    }).join('');
+
+    tbody.innerHTML = filteredRows.map(r=>r.row).reverse().join(''); // Show latest first in table
   };
 
   // ── Quick Edit Balance ────────────────────────────────────
@@ -714,38 +743,44 @@ ${c.phone?`<div class="info-box" style="background:#cce5ff;border:1px solid #006
   window.saveOldBalance=async function(){
     const custId=el('ob-customer-hidden')?.value;
     const amount=parseFloat(el('ob-amount')?.value)||0;
+    const txType=el('ob-tx-type')?.value || 'Credit';
     const method=el('ob-method')?.value||'add';
-    const note=el('ob-note')?.value||'Purana pending';
-    const monthVal=el('ob-month')?.value; // e.g. '2025-12'
+    const note=el('ob-note')?.value||'Purana balance';
+    const monthVal=el('ob-month')?.value; 
+
     if(!custId){alert('Customer select karein');return;}
     if(!amount){alert('Amount enter karein');return;}
-    if(!monthVal){alert('Mahina zaroor select karein (Kis mahine ka pending hai?)');return;}
+    if(!monthVal){alert('Mahina zaroor select karein');return;}
+    
     const cust=allCustomers.find(c=>c.id==custId);
     if(!cust)return;
+    
     const currentBal=parseFloat(cust.balance)||0;
-    const newBal=method==='set'?amount:(currentBal+amount);
-    // Build a date = last day of selected month for the record
+    // Credit (Debit Column) adds to balance, Debit (Credit Column) subtracts
+    const netAmount = txType === 'Credit' ? amount : -amount;
+    const newBal=method==='set'? netAmount : (currentBal + netAmount);
+
     const [yr,mo]=monthVal.split('-').map(Number);
-    const txDate=new Date(yr,mo,0); // last day of that month
+    const txDate=new Date(yr,mo,0); // last day
     const monthLabel=txDate.toLocaleDateString('en-PK',{month:'long',year:'numeric'});
     const desc=`Opening Balance (${monthLabel}): ${note}`;
+    
     try{
       const{error}=await supabase.from('customers').update({balance:newBal}).eq('id',custId);
       if(error)throw error;
       await supabase.from('transactions').insert([{
         customer_id:parseInt(custId),
-        transaction_type:'Credit',
-        amount:amount,
-        description:desc,
+        transaction_type: txType,
+        amount: amount,
+        description: desc,
         created_at:txDate.toISOString()
       }]);
       cust.balance=newBal;
-      showToast('success','Save Ho Gaya!',`${cust.name} — ${monthLabel} ka pending Rs.${fmt(amount)} daakhil ho gaya!`);
+      showToast('success','Save Ho Gaya!',`${cust.name} — ${monthLabel} ka record save ho gaya!`);
       computeSummary(); renderCustList();
-      if(selectedCust?.id==custId){custTxns=allTransactions.filter(t=>t.customer_id===cust.id);renderDetail();}
-      // Reset form
-      el('ob-amount').value=''; el('ob-note').value=''; el('ob-month').value='';
-      clearObCust();
+      if(selectedCust?.id==custId){ selectCust(cust.id); }
+      el('ob-amount').value=''; el('ob-note').value='';
+      bootstrap.Modal.getInstance(el('oldBalanceModal')).hide();
     }catch(e){alert('Error: '+e.message);}
   };
 
@@ -773,6 +808,12 @@ ${c.phone?`<div class="info-box" style="background:#cce5ff;border:1px solid #006
         <td>${c.name}</td>
         <td style="color:${bal>0?'#dc3545':'#198754'};font-weight:700;">Rs.${fmt(bal)}</td>
         <td><input type="month" class="form-control form-control-sm bulk-month-input" data-id="${c.id}" value="${globalMonth}"></td>
+        <td>
+          <select class="form-select form-select-sm bulk-type-input" data-id="${c.id}">
+            <option value="Credit">Debit (Udhaar)</option>
+            <option value="Debit">Credit (Advance)</option>
+          </select>
+        </td>
         <td><input type="number" class="form-control form-control-sm bulk-bal-input" data-id="${c.id}"
           placeholder="0.00" step="0.01" value=""
           style="border:1px solid ${bal>0?'#dc3545':'#ccc'};"></td>
@@ -803,9 +844,16 @@ ${c.phone?`<div class="info-box" style="background:#cce5ff;border:1px solid #006
       const val=parseFloat(inp.value);
       if(!isNaN(val)&&val>0){
         const mInp = monthInputs[i];
+        const tInp = document.querySelectorAll('.bulk-type-input')[i];
         if(!mInp || !mInp.value) { missingMonth = true; return; }
         const cust=allCustomers.find(c=>c.id==inp.dataset.id);
-        if(cust) updates.push({id:parseInt(inp.dataset.id),balance:val,name:cust.name, monthVal: mInp.value});
+        if(cust) updates.push({
+          id:parseInt(inp.dataset.id),
+          balance: val,
+          txType: tInp.value,
+          name:cust.name, 
+          monthVal: mInp.value
+        });
       }
     });
 
@@ -816,20 +864,25 @@ ${c.phone?`<div class="info-box" style="background:#cce5ff;border:1px solid #006
     try{
       for(const u of updates){
         const [yr,mo]=u.monthVal.split('-').map(Number);
-        const txDate=new Date(yr,mo,0); // last day of that month
+        const txDate=new Date(yr,mo,0); 
         const monthLabel=txDate.toLocaleDateString('en-PK',{month:'long',year:'numeric'});
 
-        const{error}=await supabase.from('customers').update({balance:u.balance}).eq('id',u.id);
+        const cust = allCustomers.find(c => c.id === u.id);
+        const currentBal = parseFloat(cust.balance) || 0;
+        // In bulk, if we use u.balance, we are usually SETTING the initial state for that month.
+        // But to be safe, let's calculate the net effect.
+        const netAmount = u.txType === 'Credit' ? u.balance : -u.balance;
+        
+        const{error}=await supabase.from('customers').update({balance: u.balance}).eq('id',u.id);
         if(error)throw error;
         await supabase.from('transactions').insert([{
-          customer_id:u.id,
-          transaction_type:'Credit',
-          amount:u.balance,
-          description:`Opening Balance (${monthLabel}) — Pichla pending`,
+          customer_id: u.id,
+          transaction_type: u.txType,
+          amount: Math.abs(u.balance),
+          description:`Opening Balance (${monthLabel}) — Purana record`,
           created_at:txDate.toISOString()
         }]);
-        const lc=allCustomers.find(c=>c.id===u.id);
-        if(lc)lc.balance=u.balance;
+        if(cust) cust.balance = u.balance;
       }
       showToast('success','Save Ho Gaya!',`${updates.length} customers ka pending daakhil ho gaya!`);
       computeSummary(); renderCustList(); buildBulkTable();
