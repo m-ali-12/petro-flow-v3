@@ -119,10 +119,16 @@
     <!-- Page Header -->
     <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
       <div>
-        <h3 class="mb-0"><i class="bi bi-building me-2 text-danger"></i>Go Company cc — Account No. 10</h3>
-        <small class="text-muted" id="sum-company-name">Company Credit Account — Stock Supplier</small>
+        <h3 class="mb-0"><i class="bi bi-building me-2 text-danger"></i>GO Company cc — Account No. 10</h3>
+        <small class="text-muted" id="sum-company-name">GO Pump Company Credit Account — Stock Supplier</small>
       </div>
       <div class="d-flex gap-2 flex-wrap">
+        <button class="btn btn-outline-info" data-bs-toggle="modal" data-bs-target="#initialCreditModal">
+          <i class="bi bi-bank me-1"></i>Initial Credit
+        </button>
+        <button class="btn btn-outline-dark" type="button" onclick="window.printCompanyStatement()">
+          <i class="bi bi-printer me-1"></i>Print Statement
+        </button>
         <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#stockPurchaseModal">
           <i class="bi bi-truck me-1"></i>Stock Purchase
         </button>
@@ -219,6 +225,7 @@
             <label class="form-label mb-1" style="font-size:11px;font-weight:700;">Type</label>
             <select class="form-select form-select-sm" id="cfilter-type" style="min-width:160px;">
               <option value="">All Types</option>
+              <option value="initial_credit">Initial Credit</option>
               <option value="stock_purchase">Stock Purchase</option>
               <option value="member_usage">Member Card</option>
               <option value="atm_charge">ATM Charge</option>
@@ -287,6 +294,47 @@
 
     </div>
   </div><!-- /container -->
+
+
+  <!-- ══════════════════════════════════════════════
+       MODAL 0 — Initial Credit / Opening Balance
+  ══════════════════════════════════════════════ -->
+  <div class="modal fade" id="initialCreditModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <form id="initialCreditForm">
+          <div class="modal-header modal-hdr-blue">
+            <h5 class="modal-title"><i class="bi bi-bank me-2"></i>Initial Credit / Opening Balance</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div class="alert alert-info py-2 mb-3" style="font-size:12px;">
+              <i class="bi bi-info-circle me-1"></i>
+              Yeh GO Company Account No. 10 ka opening credit aur credit limit set karega. Existing sales/repayment entries delete ya change nahi hongi.
+            </div>
+            <div class="row g-3">
+              <div class="col-12">
+                <label class="form-label">Initial Credit / Opening Balance (Rs.) *</label>
+                <input type="number" class="form-control" id="ic-current-credit" placeholder="0.00" step="0.01" min="0" required>
+              </div>
+              <div class="col-12">
+                <label class="form-label">Credit Limit (Rs.)</label>
+                <input type="number" class="form-control" id="ic-credit-limit" placeholder="0.00" step="0.01" min="0">
+              </div>
+              <div class="col-12">
+                <label class="form-label">Notes</label>
+                <textarea class="form-control" id="ic-notes" rows="2" placeholder="Optional..."></textarea>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-info text-white"><i class="bi bi-check2 me-1"></i>Save Initial Credit</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
 
 
   <!-- ══════════════════════════════════════════════

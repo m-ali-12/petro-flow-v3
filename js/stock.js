@@ -620,7 +620,7 @@ function showInvoice(d) {
                 <div class="row align-items-center">
                     <div class="col-8">
                         <div class="invoice-company">Khalid and Sons Petroleum</div>
-                        <div style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin-top:4px;">Pakistan · PSO Authorized Dealer</div>
+                        <div style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin-top:4px;">Pakistan · GO Authorized Dealer</div>
                     </div>
                     <div class="col-4 text-end">
                         <div style="font-size:0.7rem;letter-spacing:1.5px;text-transform:uppercase;color:rgba(255,255,255,0.6);">Stock Invoice</div>
