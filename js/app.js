@@ -243,16 +243,7 @@
       const sb = getSupabase();
       if (!sb) return;
 
-      const userId = await getAuthUserId();
-
       let query = sb.from("customers").select("*").order("sr_no", { ascending: true });
-
-      // Only filter by user_id if userId exists (auth enabled)
-      if (userId) {
-        query = query.eq("user_id", userId);
-      }
-      // If no userId (auth disabled), load all customers without filtering
-
       const { data, error } = await query;
       if (error) throw error;
       customersCache = data || [];
@@ -315,18 +306,11 @@
       const sb = getSupabase();
       if (!sb) return;
 
-      const userId = await getAuthUserId();
-
       let txQuery = sb
         .from("transactions")
         .select(`*`)
         .order("created_at", { ascending: false })
         .limit(200);
-
-      // Only filter by user_id if userId exists (auth enabled)
-      if (userId) {
-        txQuery = txQuery.eq("user_id", userId);
-      }
 
       const { data, error } = await txQuery;
       if (error) throw error;

@@ -235,6 +235,31 @@ BEGIN
 END;
 $$;
 
+-- Helper to get balance at specific time
+CREATE OR REPLACE FUNCTION public.get_customer_balance_at(cust_id BIGINT, target_date TIMESTAMPTZ)
+RETURNS NUMERIC LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+    v_total_credit NUMERIC := 0;
+    v_total_debit  NUMERIC := 0;
+BEGIN
+    -- Sum all credits (Sales/Advances/Charges) up to target_date
+    SELECT COALESCE(SUM(COALESCE(amount, charges)), 0) INTO v_total_credit
+    FROM public.transactions
+    WHERE customer_id = cust_id 
+    AND (transaction_type = 'Credit' OR transaction_type = 'Advance')
+    AND created_at < target_date;
+
+    -- Sum all debits (Vasooli/Payments) up to target_date
+    SELECT COALESCE(SUM(COALESCE(amount, charges)), 0) INTO v_total_debit
+    FROM public.transactions
+    WHERE customer_id = cust_id 
+    AND (transaction_type = 'Debit')
+    AND created_at < target_date;
+
+    RETURN v_total_credit - v_total_debit;
+END;
+$$;
+
 -- Helper to check if user is super_admin (NON-RECURSIVE)
 CREATE OR REPLACE FUNCTION public.check_is_super_admin()
 RETURNS BOOLEAN LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
