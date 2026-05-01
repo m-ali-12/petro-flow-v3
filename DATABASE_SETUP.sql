@@ -452,7 +452,7 @@ GROUP BY company_id, fuel_type;
 -- Company account summary
 CREATE OR REPLACE VIEW public.v_company_account_summary AS
 SELECT 
-  c.id, c.name, c.company_id AS tenant_id,
+  c.id, c.name, c.sr_no, c.company_id AS tenant_id,
   COALESCE(SUM(ct.amount), 0) AS total_amount,
   COALESCE(SUM(cr.amount), 0) AS total_repayments,
   COALESCE(SUM(ct.amount), 0) - COALESCE(SUM(cr.amount), 0) AS balance
@@ -460,7 +460,7 @@ FROM public.customers c
 LEFT JOIN public.company_transactions ct ON ct.b2b_company_id = c.id
 LEFT JOIN public.company_repayments cr ON cr.b2b_company_id = c.id
 WHERE c.is_company = true
-GROUP BY c.id, c.name, c.company_id;
+GROUP BY c.id, c.name, c.sr_no, c.company_id;
 
 -- Expense ledger
 CREATE OR REPLACE VIEW public.v_expense_ledger AS

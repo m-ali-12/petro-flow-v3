@@ -199,18 +199,18 @@
             <div class="col-md-4">
               <label class="form-label small fw-semibold">Liters Bika (24 Hours) <span class="text-danger">*</span></label>
               <input type="number" id="${prefix}-li-${num}" class="form-control"
-                step="0.001" placeholder="Total liters sold" oninput="DR.calcMachine('${fuel}',${num})">
+                step="0.001" placeholder="Total liters sold" oninput="DR.calcMachine('${fuel}',${num})" 
+                style="border:2px solid ${fuel==='Petrol'?'#198754':'#f1c40f'};">
             </div>
             <div class="col-md-4">
               <label class="form-label small fw-semibold">
                 Udhaar Sale (Rs)
-                <span class="text-muted fw-normal small">credit customers ka</span>
               </label>
               <input type="number" id="${prefix}-ud-${num}" class="form-control"
                 step="0.01" placeholder="0.00" oninput="DR.calcMachine('${fuel}',${num})">
             </div>
             <div class="col-md-4">
-              <label class="form-label small fw-semibold">Testing / Pump Test (L)</label>
+              <label class="form-label small fw-semibold">Testing (L)</label>
               <input type="number" id="${prefix}-te-${num}" class="form-control"
                 step="0.001" placeholder="0.000" oninput="DR.calcMachine('${fuel}',${num})">
             </div>
@@ -550,21 +550,24 @@
         ? '<span class="badge" style="background:#d4edda;color:#155724;padding:4px 10px;">⛽ Petrol</span>'
         : '<span class="badge" style="background:#fff3cd;color:#856404;padding:4px 10px;">🛢 Diesel</span>';
 
+      const hasOpenClose = (m.opening || m.closing);
+      const openCloseInfo = hasOpenClose 
+        ? `<div class="small text-muted" style="font-size:10px;">O: ${fmtL(m.opening)} | C: ${fmtL(m.closing)}</div>`
+        : '';
+
       return `<tr>
         <td><strong>${fmtD(dateStr)}</strong></td>
         <td>${fBadge}</td>
         <td class="text-center">M#${m.machine || 1}</td>
-        <td class="text-end">${fmtL(m.opening || 0)}</td>
-        <td class="text-end">${fmtL(m.closing || 0)}</td>
-        <td class="text-end text-primary fw-semibold">${fmtL(liters)} L</td>
+        <td class="text-end">
+          <div class="text-primary fw-bold">${fmtL(liters)} L</div>
+          ${openCloseInfo}
+        </td>
         <td class="text-end">Rs.${fmt(rate)}</td>
         <td class="text-end">Rs.${fmt(gross)}</td>
         <td class="text-end text-danger">Rs.${fmt(udhaar)}</td>
         <td class="text-end fw-bold ${cash >= 0 ? 'profit-pos' : 'profit-neg'}">Rs.${fmt(cash)}</td>
         <td class="text-center no-print">
-          <button class="btn btn-sm btn-outline-warning me-1" onclick="DR.openEdit(${r.id})" title="Edit">
-            <i class="bi bi-pencil"></i>
-          </button>
           <button class="btn btn-sm btn-outline-danger" onclick="DR.del(${r.id})" title="Delete">
             <i class="bi bi-trash"></i>
           </button>

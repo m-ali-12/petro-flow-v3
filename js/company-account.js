@@ -828,8 +828,9 @@
     try { const { data } = await sb().auth.getUser(); return data?.user?.id||null; } catch { return null; }
   }
   async function getCompanyId() {
-    const { data, error } = await sb().from('customers').select('id').eq('account_type','company').maybeSingle();
-    if (error || !data) throw new Error('Go Company account nahi mila. Pehle SQL migration run karein.');
+    // Specifically target Account No. 10 as per user request
+    const { data, error } = await sb().from('customers').select('id').eq('sr_no', 10).maybeSingle();
+    if (error || !data) throw new Error('Go Company account (No. 10) nahi mila. Pehle SQL patch run karein.');
     return data.id;
   }
 
@@ -1054,7 +1055,8 @@
   // ============================================================
   window.loadCompanySummary = async function () {
     try {
-      const { data, error } = await sb().from('v_company_account_summary').select('*').maybeSingle();
+      // Filter by sr_no=10 for specific Go Company account
+      const { data, error } = await sb().from('v_company_account_summary').select('*').eq('sr_no', 10).maybeSingle();
       if (error) throw error;
       if (!data) return;
       setText('sum-company-name',     data.company_name || 'Go Company cc');
