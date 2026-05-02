@@ -201,6 +201,49 @@
 <script>
   let allUsers = [];
 
+  async function ensureCompanyId() {
+    if (window.currentUserProfile?.company_id) return window.currentUserProfile.company_id;
+    const sb = window.supabaseClient;
+    const uid = window.currentUser?.id;
+    if (!uid) return null;
+    try {
+      let { data: prof } = await sb.from('user_profiles').select('company_id,role,status').eq('user_id', uid).maybeSingle();
+      if (prof?.company_id) {
+        window.currentUserProfile = { ...(window.currentUserProfile || {}), ...prof };
+        return prof.company_id;
+      }
+      const { data: company, error: ce } = await sb.from('companies')
+        .insert([{ name: 'Khalid & Sons Petroleum', owner_id: uid }])
+        .select('id').single();
+      if (ce) throw ce;
+      await sb.from('user_profiles').update({ company_id: company.id, status: 'active' }).eq('user_id', uid);
+      window.currentUserProfile = { ...(window.currentUserProfile || {}), company_id: company.id };
+      return company.id;
+    } catch (e) {
+      console.warn('ensureCompanyId failed:', e.message);
+      return null;
+    }
+  }
+
+  function findMissingColumn(message){
+    const m = String(message || '').match(/'([^']+)' column|column ['"]?([a-zA-Z0-9_]+)['"]?/i);
+    return m ? (m[1] || m[2]) : null;
+  }
+
+  async function safeInviteInsert(row){
+    let payload = { ...row };
+    const optional = ['invited_by','company_id','status'];
+    for(let i=0;i<6;i++){
+      const { error } = await window.supabaseClient.from('staff_invites').insert([payload]);
+      if(!error) return;
+      const col = findMissingColumn(error.message || error.details || '');
+      if(col && Object.prototype.hasOwnProperty.call(payload,col)){ delete payload[col]; continue; }
+      const rm = optional.find(k => Object.prototype.hasOwnProperty.call(payload,k) && /schema cache|column|could not find/i.test(error.message || error.details || ''));
+      if(rm){ delete payload[rm]; continue; }
+      throw error;
+    }
+  }
+
   window.addEventListener('DOMContentLoaded', () => waitReady(loadAdminPanel));
 
   function waitReady(cb, n = 0) {
@@ -223,6 +266,8 @@
       return;
     }
 
+    await ensureCompanyId();
+
     // Show rejected tab and full role filter only for super_admin
     if (window.userRole === 'super_admin') {
       document.getElementById('rejected-tab-btn').style.display = 'inline-block';
@@ -239,8 +284,11 @@
 
   // Invitation Logic
   async function loadActiveInvites() {
-    const { data, error } = await window.supabaseClient.from('staff_invites').select('*');
-    if (error) return;
+    const companyId = await ensureCompanyId();
+    let q = window.supabaseClient.from('staff_invites').select('*').order('created_at', { ascending:false });
+    if (companyId) q = q.eq('company_id', companyId);
+    const { data, error } = await q;
+    if (error) { document.getElementById('active-invites').innerHTML = '<div class="text-danger small">Invite list error: '+error.message+'</div>'; return; }
     const el = document.getElementById('active-invites');
     if (!data.length) { el.innerHTML = ''; return; }
     el.innerHTML = '<div class="text-muted mb-2 fw-semibold">Pending Invites:</div>' + 
@@ -256,15 +304,15 @@
     e.preventDefault();
     const email = document.getElementById('invite-email').value;
     const role  = document.getElementById('invite-role').value;
-    const companyId = window.currentUserProfile?.company_id;
+    const companyId = await ensureCompanyId();
 
-    if (!companyId) { toast('Error: Company ID not found. Try logging out and back in.', 'danger'); return; }
+    if (!companyId) { toast('Company ID not found. Please run COMPLETE_PROJECT_FINAL_FIX.sql in Supabase, then refresh.', 'danger'); return; }
 
-    const { error } = await window.supabaseClient.from('staff_invites').insert([{ 
-        email, role, company_id: companyId, invited_by: window.currentUser.id 
-    }]);
-
-    if (error) { toast('Invite failed: ' + error.message, 'danger'); return; }
+    try {
+      await safeInviteInsert({ 
+        email, role, company_id: companyId, invited_by: window.currentUser?.id, status: 'pending'
+      });
+    } catch (error) { toast('Invite failed: ' + error.message, 'danger'); return; }
     toast('✅ Invitation sent! Ask staff to sign up with this email.', 'success');
     document.getElementById('invite-form').reset();
     loadActiveInvites();

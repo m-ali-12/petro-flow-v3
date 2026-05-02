@@ -613,6 +613,39 @@ function fmt(n) {
 }
 function getSupabase() { return window.supabaseClient; }
 
+function findMissingColumn(message){
+  const m = String(message || '').match(/'([^']+)' column|column ['"]?([a-zA-Z0-9_]+)['"]?/i);
+  return m ? (m[1] || m[2]) : null;
+}
+
+async function safeCustomerInsert(row){
+  let payload = { ...row };
+  const optional = ['is_company','company_id','user_id','phone','category'];
+  for(let i=0;i<8;i++){
+    const { error } = await getSupabase().from('customers').insert([payload]);
+    if(!error) return;
+    const col = findMissingColumn(error.message || error.details || '');
+    if(col && Object.prototype.hasOwnProperty.call(payload,col)){ delete payload[col]; continue; }
+    const rm = optional.find(k => Object.prototype.hasOwnProperty.call(payload,k) && /schema cache|column|could not find/i.test(error.message || error.details || ''));
+    if(rm){ delete payload[rm]; continue; }
+    throw error;
+  }
+}
+
+async function safeCustomerUpdate(id,row){
+  let payload = { ...row };
+  const optional = ['is_company','company_id','user_id','phone','category'];
+  for(let i=0;i<8;i++){
+    const { error } = await getSupabase().from('customers').update(payload).eq('id', id);
+    if(!error) return;
+    const col = findMissingColumn(error.message || error.details || '');
+    if(col && Object.prototype.hasOwnProperty.call(payload,col)){ delete payload[col]; continue; }
+    const rm = optional.find(k => Object.prototype.hasOwnProperty.call(payload,k) && /schema cache|column|could not find/i.test(error.message || error.details || ''));
+    if(rm){ delete payload[rm]; continue; }
+    throw error;
+  }
+}
+
 // ════════════════════════════════════════════
 // AUTH
 // ════════════════════════════════════════════
@@ -845,8 +878,8 @@ async function addCustomer() {
         is_company: (ct === 'Company')
     };
     if (currentUserId) row.user_id = currentUserId;
-    const { error } = await sb.from('customers').insert([row]);
-    if (error) throw error;
+    if (window.currentUserProfile?.company_id) row.company_id = window.currentUserProfile.company_id;
+    await safeCustomerInsert(row);
     toast('Customer added!', 'success');
     closeModal('addCustomerModal');
     await loadCustomers();
@@ -889,10 +922,8 @@ async function updateCustomer() {
         is_company: (ct === 'Company')
     };
     
-    const { error } = await sb.from('customers')
-      .update(updateData)
-      .eq('id', id);
-    if (error) throw error;
+    if (window.currentUserProfile?.company_id) updateData.company_id = window.currentUserProfile.company_id;
+    await safeCustomerUpdate(id, updateData);
     toast('Customer updated!', 'success');
     closeModal('editCustomerModal');
     await loadCustomers();

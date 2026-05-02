@@ -2083,6 +2083,12 @@
   let activeFilters = { type:'', dateFrom:'', dateTo:'', search:'', customerId:'' };
   let selectedCustomers = { sale: null, vasooli: null, advance: null, expense: null };
 
+  // Cash advance list pagination/selection
+  let allAdvances = [];
+  let advanceCurrentPage = 1;
+  let advancePageSize = 10;
+  let selectedAdvanceIds = new Set();
+
   function el(id) { return document.getElementById(id); }
   function fmt(n) { return Number(n||0).toLocaleString('en-PK',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
@@ -2408,6 +2414,83 @@
     if(el('net-balance'))   el('net-balance').textContent   = 'Rs. '+fmt(cr-db-ex);
     if(el('total-advance')) el('total-advance').textContent = 'Rs. '+fmt(adv);
     if(el('advance-count')) el('advance-count').textContent = advc+' advances';
+  }
+
+  function ensureSummaryModal(){
+    let modal = el('summaryDetailModal');
+    if(modal) return modal;
+    const wrap = document.createElement('div');
+    wrap.innerHTML = `<div class="modal fade" id="summaryDetailModal" tabindex="-1">
+      <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+          <div class="modal-header" style="background:#172554;color:#fff;">
+            <h5 class="modal-title" id="summaryDetailTitle">Details</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body" id="summaryDetailBody"></div>
+        </div>
+      </div>
+    </div>`;
+    document.body.appendChild(wrap.firstElementChild);
+    return el('summaryDetailModal');
+  }
+
+  function showSummaryDetails(kind){
+    const labels={credit:'Credit / Sales Details',debit:'Debit / Vasooli Details',expense:'Expense Details',advance:'Cash Advance Details',net:'Net Balance Details'};
+    let rows = filteredTransactions.slice();
+    if(kind==='credit') rows = rows.filter(t=>t.transaction_type==='Credit');
+    else if(kind==='debit') rows = rows.filter(t=>t.transaction_type==='Debit');
+    else if(kind==='expense') rows = rows.filter(t=>t.transaction_type==='Expense');
+    else if(kind==='advance') rows = rows.filter(t=>t.transaction_type==='Advance');
+    else if(kind==='net') rows = rows.filter(t=>['Credit','Debit','Expense'].includes(t.transaction_type));
+
+    const modal=ensureSummaryModal();
+    el('summaryDetailTitle').textContent = labels[kind] || 'Details';
+
+    const grouped = new Map();
+    rows.forEach(t=>{
+      const key = t.customer_id || 'no_customer';
+      const c = t.customers || {};
+      if(!grouped.has(key)) grouped.set(key,{name:c.name||'N/A',sr:c.sr_no||'-',credit:0,debit:0,expense:0,advance:0,count:0,balance:c.balance});
+      const g=grouped.get(key); const a=txAmount(t); g.count++;
+      if(t.transaction_type==='Credit') g.credit+=a;
+      else if(t.transaction_type==='Debit') g.debit+=a;
+      else if(t.transaction_type==='Expense') g.expense+=a;
+      else if(t.transaction_type==='Advance') g.advance+=a;
+    });
+
+    const list=[...grouped.values()].sort((a,b)=>(b.credit+b.debit+b.expense+b.advance)-(a.credit+a.debit+a.expense+a.advance));
+    const total = rows.reduce((s,t)=>s+txAmount(t),0);
+    const body = el('summaryDetailBody');
+    if(!rows.length){
+      body.innerHTML = '<div class="text-center text-muted py-5"><i class="bi bi-inbox fs-1 d-block mb-2"></i>Koi record nahi mila</div>';
+    } else {
+      body.innerHTML = `<div class="alert alert-light border d-flex justify-content-between flex-wrap gap-2">
+          <strong>Total Records: ${rows.length}</strong><strong>Total Amount: Rs. ${fmt(total)}</strong>
+        </div>
+        <div class="table-responsive"><table class="table table-sm table-hover align-middle">
+          <thead class="table-dark"><tr><th>Customer</th><th>Entries</th><th>Credit/Sale</th><th>Debit/Vasooli</th><th>Expense</th><th>Advance</th><th>Current Balance</th></tr></thead>
+          <tbody>${list.map(g=>`<tr>
+            <td><strong>${g.name}</strong><br><small class="text-muted">#${g.sr}</small></td>
+            <td>${g.count}</td>
+            <td class="text-success fw-bold">Rs. ${fmt(g.credit)}</td>
+            <td class="text-primary fw-bold">Rs. ${fmt(g.debit)}</td>
+            <td class="text-danger fw-bold">Rs. ${fmt(g.expense)}</td>
+            <td style="color:#6f42c1;font-weight:700;">Rs. ${fmt(g.advance)}</td>
+            <td>${g.balance===undefined?'—':'Rs. '+fmt(g.balance)}</td>
+          </tr>`).join('')}</tbody></table></div>`;
+    }
+    new bootstrap.Modal(modal).show();
+  }
+
+  function setupSummaryCards(){
+    const map={
+      'summary-card-credit':'credit', 'summary-card-debit':'debit', 'summary-card-expense':'expense',
+      'summary-card-net':'net', 'summary-card-advance':'advance'
+    };
+    Object.entries(map).forEach(([id,kind])=>{
+      const card=el(id); if(card && !card.dataset.bound){ card.dataset.bound='1'; card.addEventListener('click',()=>showSummaryDetails(kind)); }
+    });
   }
 
   // ══════════════════════════════════════════════════════════
@@ -2912,7 +2995,7 @@ ${adv.notes?`<div class="row"><span class="lbl">Notes</span><span class="val">${
 
   async function loadAdvanceList(){
     const tbody=el('advance-list-tbody'); if(!tbody) return;
-    tbody.innerHTML='<tr><td colspan="8" class="text-center py-3"><div class="spinner-border spinner-border-sm text-primary me-2"></div>Loading...</td></tr>';
+    tbody.innerHTML='<tr><td colspan="9" class="text-center py-3"><div class="spinner-border spinner-border-sm text-primary me-2"></div>Loading...</td></tr>';
     try{
       const statusFilter=el('advance-filter-status')?.value||'';
       let query=supabase.from('cash_advances')
@@ -2922,40 +3005,90 @@ ${adv.notes?`<div class="row"><span class="lbl">Notes</span><span class="val">${
       const{data,error}=await query;
       if(error) throw error;
       await refreshCustomersIfNeeded(data || []);
-      const advances=attachCustomers(data || []);
-      const countEl=el('advance-list-count'); if(countEl) countEl.textContent=advances.length+' advances';
-      if(!advances.length){
-        tbody.innerHTML='<tr><td colspan="8" class="text-center py-4 text-muted"><i class="bi bi-inbox fs-4 d-block mb-2"></i>Koi cash advance nahi</td></tr>';
-        if(el('advance-list-tfoot')) el('advance-list-tfoot').innerHTML=''; return;
-      }
-      let totalAdv=0;
-      tbody.innerHTML=advances.map((a,idx)=>{
-        const amt=parseFloat(a.amount)||0; totalAdv+=amt;
-        const custBal=parseFloat(a.customers?.balance)||0;
-        const sMap={
-          pending:`<span style="background:#fff3cd;color:#856404;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;">⏳ Pending</span>`,
-          partial:`<span style="background:#cce5ff;color:#004085;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;">🔄 Partial</span>`,
-          cleared:`<span style="background:#d4edda;color:#155724;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;">✅ Cleared</span>`,
-        };
-        return `<tr>
-          <td style="padding:10px 12px;color:#888;">${idx+1}</td>
-          <td style="padding:10px 12px;"><strong>${a.customers?.name||'N/A'}</strong><br><small style="color:#888;">#${a.customers?.sr_no||'-'} | ${a.customers?.phone||'-'}</small></td>
-          <td style="padding:10px 12px;">${a.advance_date?new Date(a.advance_date).toLocaleDateString('en-PK'):'—'}</td>
-          <td style="padding:10px 12px;font-weight:700;color:#6f42c1;font-size:15px;">Rs.${fmt(amt)}</td>
-          <td style="padding:10px 12px;">${a.reason||a.description||'-'}${a.notes?`<br><small style="color:#888">${a.notes}</small>`:''}</td>
-          <td style="padding:10px 12px;"><span style="font-weight:700;color:${custBal>0?'#dc3545':'#198754'};">Rs.${fmt(Math.abs(custBal))}</span><br><small style="color:${custBal>0?'#dc3545':'#198754'};">${custBal>0?'Baqi':(custBal<0?'Advance':'Saaf')}</small></td>
-          <td style="padding:10px 12px;">${sMap[a.status]||a.status||'pending'}</td>
-          <td style="padding:10px 12px;"><div style="display:flex;gap:4px;flex-wrap:wrap;">
-            <button onclick="window.printAdvListItem(${a.id})" style="background:#6f42c1;color:#fff;border:none;border-radius:5px;padding:4px 9px;cursor:pointer;font-size:12px;"><i class="bi bi-printer"></i> Parchi</button>
-            ${a.status!=='cleared'?`<button onclick="window.markAdvanceCleared(${a.id})" style="background:#198754;color:#fff;border:none;border-radius:5px;padding:4px 9px;cursor:pointer;font-size:12px;"><i class="bi bi-check2"></i> Clear</button>`:''}
-          </div></td></tr>`;
-      }).join('');
-      if(el('advance-list-tfoot')) el('advance-list-tfoot').innerHTML=`<tr style="background:#f3eeff;font-weight:800;"><td colspan="3" style="padding:10px 12px;text-align:right;color:#6f42c1;">TOTAL:</td><td style="padding:10px 12px;color:#6f42c1;font-size:16px;">Rs.${fmt(totalAdv)}</td><td colspan="4"></td></tr>`;
+      allAdvances=attachCustomers(data || []);
+      selectedAdvanceIds.clear();
+      advanceCurrentPage=1;
+      renderAdvancePage();
     }catch(e){
       console.error('loadAdvanceList:',e);
-      tbody.innerHTML=`<tr><td colspan="8" class="text-center py-3 text-danger">Error: ${e.message}</td></tr>`;
+      tbody.innerHTML=`<tr><td colspan="9" class="text-center py-3 text-danger">Error: ${e.message}</td></tr>`;
     }
   }
+
+  function renderAdvancePage(){
+    const tbody=el('advance-list-tbody'); if(!tbody) return;
+    const totalCount=allAdvances.length;
+    const countEl=el('advance-list-count'); if(countEl) countEl.textContent=totalCount+' advances';
+    const totalPages=Math.max(1, Math.ceil(totalCount/advancePageSize));
+    if(advanceCurrentPage>totalPages) advanceCurrentPage=totalPages;
+    const start=(advanceCurrentPage-1)*advancePageSize;
+    const pageRows=allAdvances.slice(start,start+advancePageSize);
+    if(!pageRows.length){
+      tbody.innerHTML='<tr><td colspan="9" class="text-center py-4 text-muted"><i class="bi bi-inbox fs-4 d-block mb-2"></i>Koi cash advance nahi</td></tr>';
+      if(el('advance-list-tfoot')) el('advance-list-tfoot').innerHTML='';
+      renderAdvancePagination(0,1); updateAdvanceSelectAll();
+      return;
+    }
+    let totalAdv=allAdvances.reduce((s,a)=>s+(parseFloat(a.amount)||0),0);
+    const sMap={
+      pending:`<span style="background:#fff3cd;color:#856404;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;">⏳ Pending</span>`,
+      partial:`<span style="background:#cce5ff;color:#004085;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;">🔄 Partial</span>`,
+      cleared:`<span style="background:#d4edda;color:#155724;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;">✅ Cleared</span>`,
+    };
+    tbody.innerHTML=pageRows.map((a,idx)=>{
+      const amt=parseFloat(a.amount)||0;
+      const custBal=parseFloat(a.customers?.balance)||0;
+      const checked=selectedAdvanceIds.has(a.id);
+      return `<tr style="${checked?'background:#f3eeff;':''}">
+        <td style="padding:10px 8px;text-align:center;"><input type="checkbox" class="adv-row-cb" data-id="${a.id}" ${checked?'checked':''} style="width:16px;height:16px;cursor:pointer;accent-color:#6f42c1;"></td>
+        <td style="padding:10px 12px;color:#888;">${start+idx+1}</td>
+        <td style="padding:10px 12px;"><strong>${a.customers?.name||'N/A'}</strong><br><small style="color:#888;">#${a.customers?.sr_no||'-'} | ${a.customers?.phone||'-'}</small></td>
+        <td style="padding:10px 12px;white-space:nowrap;">${a.advance_date?new Date(a.advance_date).toLocaleDateString('en-PK'):'—'}</td>
+        <td style="padding:10px 12px;font-weight:700;color:#6f42c1;font-size:15px;white-space:nowrap;">Rs.${fmt(amt)}</td>
+        <td style="padding:10px 12px;max-width:260px;">${a.reason||a.description||'-'}${a.notes?`<br><small style="color:#888">${a.notes}</small>`:''}</td>
+        <td style="padding:10px 12px;"><span style="font-weight:700;color:${custBal>0?'#dc3545':'#198754'};">Rs.${fmt(Math.abs(custBal))}</span><br><small style="color:${custBal>0?'#dc3545':'#198754'};">${custBal>0?'Baqi':(custBal<0?'Advance':'Saaf')}</small></td>
+        <td style="padding:10px 12px;">${sMap[a.status]||a.status||'pending'}</td>
+        <td style="padding:10px 12px;"><div style="display:flex;gap:4px;flex-wrap:wrap;">
+          <button onclick="window.printAdvListItem(${a.id})" style="background:#6f42c1;color:#fff;border:none;border-radius:5px;padding:4px 9px;cursor:pointer;font-size:12px;"><i class="bi bi-printer"></i> Parchi</button>
+          ${a.status!=='cleared'?`<button onclick="window.markAdvanceCleared(${a.id})" style="background:#198754;color:#fff;border:none;border-radius:5px;padding:4px 9px;cursor:pointer;font-size:12px;"><i class="bi bi-check2"></i> Clear</button>`:''}
+        </div></td></tr>`;
+    }).join('');
+    tbody.querySelectorAll('.adv-row-cb').forEach(cb=>{
+      cb.addEventListener('change',function(){
+        const id=parseInt(this.dataset.id);
+        if(this.checked) selectedAdvanceIds.add(id); else selectedAdvanceIds.delete(id);
+        renderAdvancePage();
+      });
+    });
+    if(el('advance-list-tfoot')) el('advance-list-tfoot').innerHTML=`<tr style="background:#f3eeff;font-weight:800;"><td colspan="4" style="padding:10px 12px;text-align:right;color:#6f42c1;">TOTAL:</td><td style="padding:10px 12px;color:#6f42c1;font-size:16px;">Rs.${fmt(totalAdv)}</td><td colspan="4"></td></tr>`;
+    renderAdvancePagination(totalCount,totalPages);
+    updateAdvanceSelectAll();
+  }
+
+  function renderAdvancePagination(total,totalPages){
+    const c=el('advance-pagination-container'); if(!c) return;
+    if(total===0){ c.innerHTML=''; return; }
+    const start=(advanceCurrentPage-1)*advancePageSize+1;
+    const end=Math.min(advanceCurrentPage*advancePageSize,total);
+    let pages='';
+    let sp=Math.max(1,advanceCurrentPage-2), ep=Math.min(totalPages,sp+4);
+    if(ep-sp<4) sp=Math.max(1,ep-4);
+    for(let i=sp;i<=ep;i++) pages+=`<button onclick="window.advGoToPage(${i})" class="btn btn-sm ${i===advanceCurrentPage?'btn-primary':'btn-outline-secondary'}">${i}</button>`;
+    c.innerHTML=`<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 p-2 bg-light">
+      <small class="text-muted">${start}–${end} of ${total} advances</small>
+      <div class="d-flex gap-1"><button class="btn btn-sm btn-outline-secondary" onclick="window.advGoToPage(1)" ${advanceCurrentPage===1?'disabled':''}>«</button><button class="btn btn-sm btn-outline-secondary" onclick="window.advGoToPage(${advanceCurrentPage-1})" ${advanceCurrentPage===1?'disabled':''}>‹</button>${pages}<button class="btn btn-sm btn-outline-secondary" onclick="window.advGoToPage(${advanceCurrentPage+1})" ${advanceCurrentPage===totalPages?'disabled':''}>›</button><button class="btn btn-sm btn-outline-secondary" onclick="window.advGoToPage(${totalPages})" ${advanceCurrentPage===totalPages?'disabled':''}>»</button></div>
+    </div>`;
+  }
+
+  function updateAdvanceSelectAll(){
+    const cb=el('advance-select-all-cb'); if(!cb) return;
+    const pageIds=allAdvances.slice((advanceCurrentPage-1)*advancePageSize,advanceCurrentPage*advancePageSize).map(a=>a.id);
+    cb.checked=pageIds.length>0 && pageIds.every(id=>selectedAdvanceIds.has(id));
+    cb.indeterminate=!cb.checked && pageIds.some(id=>selectedAdvanceIds.has(id));
+  }
+
+  window.advGoToPage=function(p){ advanceCurrentPage=Math.max(1,Math.min(p,Math.ceil(allAdvances.length/advancePageSize)||1)); renderAdvancePage(); };
+
 
   window.printAdvListItem=async function(advId){
     try{
@@ -3063,6 +3196,13 @@ ${adv.notes?`<div class="row"><span class="lbl">Notes</span><span class="val">${
     if(si){ let deb; si.addEventListener('input',()=>{ clearTimeout(deb); deb=setTimeout(()=>{ activeFilters.search=si.value; applyFilters(); },300); }); }
     el('filter-customer')?.addEventListener('change',function(){ activeFilters.customerId=this.value; applyFilters(); });
     el('advance-filter-status')?.addEventListener('change',loadAdvanceList);
+    el('advance-page-size')?.addEventListener('change',function(){ advancePageSize=parseInt(this.value)||10; advanceCurrentPage=1; renderAdvancePage(); });
+    el('advance-select-all-cb')?.addEventListener('change',function(){
+      const pageIds=allAdvances.slice((advanceCurrentPage-1)*advancePageSize,advanceCurrentPage*advancePageSize).map(a=>a.id);
+      pageIds.forEach(id=>{ if(this.checked) selectedAdvanceIds.add(id); else selectedAdvanceIds.delete(id); });
+      renderAdvancePage();
+    });
+    setupSummaryCards();
 
     // ── Auto-set today's date & past-date warning ──────────
     const today = new Date().toISOString().split('T')[0];
