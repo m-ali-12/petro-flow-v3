@@ -14,6 +14,8 @@
   .cust-card.selected { border-color:#0d6efd !important; }
   .pending-badge { font-size:13px; font-weight:700; padding:4px 10px; border-radius:12px; }
   .month-row:hover td { background:#f0f4ff; }
+  .ledger-warning{background:#fff3cd;border:1px solid #ffc107;color:#664d03;border-radius:10px;padding:8px 10px;font-size:12px;margin-top:8px;}
+  .khata-action-btn{font-size:11px;padding:3px 7px;border-radius:8px;}
   @media print {
     #navbar-placeholder,#footer-placeholder,.no-print{display:none!important;}
     body{font-size:11px;}
@@ -147,10 +149,11 @@
                     <th style="padding:10px 14px;text-align:right;">Advance Out</th>
                     <th style="padding:10px 14px;text-align:right;">Month Pending</th>
                     <th style="padding:10px 14px;text-align:center;">Status</th>
+                    <th class="no-print" style="padding:10px 14px;text-align:center;">Actions</th>
                   </tr>
                 </thead>
                 <tbody id="monthly-tbody">
-                  <tr><td colspan="6" class="text-center py-3 text-muted">Customer select karein</td></tr>
+                  <tr><td colspan="7" class="text-center py-3 text-muted">Customer select karein</td></tr>
                 </tbody>
                 <tfoot id="monthly-tfoot"></tfoot>
               </table>
@@ -385,6 +388,40 @@
   function el(id){ return document.getElementById(id); }
   function fmt(n){ return Number(n||0).toLocaleString('en-PK',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
+  function num(v){ return parseFloat(v || 0) || 0; }
+  function sameMonthKey(t, key){
+    if(!t?.created_at || !key) return false;
+    const d = new Date(t.created_at);
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}` === key;
+  }
+  function txAmount(t){ return num(t?.amount || t?.charges); }
+  function khataEffect(t) {
+    const amt = txAmount(t);
+    const type = String(t?.transaction_type || '').toLowerCase();
+    // Credit = udhaar/sale/opening pending, it increases balance.
+    // Debit = jama/vasooli/deposit, it decreases balance.
+    // Advance here means cash given out to customer, it increases receivable.
+    if (type === 'debit' || type === 'recovery' || type === 'vasooli' || type === 'payment') return -amt;
+    if (type === 'credit' || type === 'advance' || type === 'cashadvance') return amt;
+    return 0;
+  }
+  function calculateCustomerLedger(customerId, txList = allTransactions){
+    return (txList || [])
+      .filter(t => String(t.customer_id) === String(customerId))
+      .reduce((sum,t) => sum + khataEffect(t), 0);
+  }
+  async function recalcAndUpdateCustomerBalance(customerId){
+    const { data, error } = await supabase
+      .from('transactions')
+      .select('id,customer_id,transaction_type,amount,charges')
+      .eq('customer_id', customerId);
+    if(error) throw error;
+    const ledgerBal = calculateCustomerLedger(customerId, data || []);
+    const { error: updErr } = await supabase.from('customers').update({ balance: ledgerBal }).eq('id', customerId);
+    if(updErr) throw updErr;
+    return ledgerBal;
+  }
+
   function showToast(type,title,msg){
     const t=el('liveToast'); if(!t){alert(title+': '+msg);return;}
     el('toast-title').textContent=title; el('toast-message').textContent=msg;
@@ -485,6 +522,8 @@
     el('detail-card').style.display='block';
     const c=selectedCust;
     const bal=parseFloat(c.balance)||0;
+    const ledgerBal=calculateCustomerLedger(c.id, custTxns);
+    const mismatch=Math.abs(bal-ledgerBal)>0.009;
     const txCount=custTxns.length;
     const totalSale=custTxns.filter(t=>t.transaction_type==='Credit').reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
     const totalVasooli=custTxns.filter(t=>t.transaction_type==='Debit').reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
@@ -501,11 +540,17 @@
         <div class="text-end">
           <div style="font-size:28px;font-weight:900;color:${bal>0?'#dc3545':'#198754'};">Rs.${fmt(bal)}</div>
           <div style="color:${bal>0?'#dc3545':'#198754'};font-weight:600;">${bal>0?'KHATA BAQI':'✅ Account Saaf'}</div>
-          <button class="btn btn-sm btn-outline-warning mt-1 no-print" onclick="quickEditBalance(${c.id})">
-            <i class="bi bi-pencil me-1"></i>Balance Edit
-          </button>
+          <div class="d-flex gap-1 justify-content-end flex-wrap no-print">
+            <button class="btn btn-sm btn-outline-warning mt-1" onclick="quickEditBalance(${c.id})" title="Adjustment transaction bana kar balance change karega">
+              <i class="bi bi-pencil me-1"></i>Adjustment Entry
+            </button>
+            <button class="btn btn-sm btn-outline-success mt-1" onclick="repairCustomerBalance(${c.id})" title="Transactions ke hisab se balance dobara calculate karega">
+              <i class="bi bi-arrow-repeat me-1"></i>Fix Balance
+            </button>
+          </div>
         </div>
       </div>
+      ${mismatch ? `<div class="ledger-warning no-print"><strong>⚠ Balance mismatch:</strong> Customer card mein Rs.${fmt(bal)} hai, lekin ledger transactions ke hisaab se Rs.${fmt(ledgerBal)} banta hai. <button class="btn btn-sm btn-warning ms-2" onclick="repairCustomerBalance(${c.id})">Ledger se thik karein</button></div>` : ''}
       <div class="row g-2 mt-2">
         <div class="col-6 col-md-3">
           <div style="background:#fdecea;border-radius:8px;padding:8px 12px;text-align:center;">
@@ -565,8 +610,9 @@
       if(yearF && String(d.getFullYear())!==yearF)return;
       const key=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
       const lbl=d.toLocaleDateString('en-PK',{month:'long',year:'numeric'});
-      if(!map[key])map[key]={lbl,sale:0,vasooli:0,adv:0};
-      const a=parseFloat(t.amount)||0;
+      if(!map[key])map[key]={lbl,sale:0,vasooli:0,adv:0,txns:[]};
+      const a=parseFloat(t.amount || t.charges)||0;
+      map[key].txns.push(t);
       if(t.transaction_type==='Credit')map[key].sale+=a;
       else if(t.transaction_type==='Debit')map[key].vasooli+=a;
       else if(t.transaction_type==='Advance')map[key].adv+=a;
@@ -574,7 +620,7 @@
 
     const sorted=Object.keys(map).sort((a,b)=>b.localeCompare(a));
     if(!sorted.length){
-      el('monthly-tbody').innerHTML='<tr><td colspan="6" class="text-center text-muted py-3">Koi transactions nahi is period mein</td></tr>';
+      el('monthly-tbody').innerHTML='<tr><td colspan="7" class="text-center text-muted py-3">Koi transactions nahi is period mein</td></tr>';
       el('monthly-tfoot').innerHTML=''; return;
     }
 
@@ -583,10 +629,15 @@
       const m=map[key];
       const pending=m.sale+m.adv-m.vasooli;
       totSale+=m.sale; totVas+=m.vasooli; totAdv+=m.adv;
+      const oldTx=m.txns.find(t=>/opening balance|purana record|manual balance adjustment|old pending/i.test(String(t.description||'')));
+      const actionHtml=oldTx
+        ? `<button class="btn btn-sm btn-outline-primary khata-action-btn me-1" onclick="event.stopPropagation();editKhataTransaction(${Number(oldTx.id)})" title="Is month ki old/purani entry edit karein"><i class="bi bi-pencil"></i></button>
+           <button class="btn btn-sm btn-outline-danger khata-action-btn" onclick="event.stopPropagation();deleteKhataTransaction(${Number(oldTx.id)})" title="Is month ki old/purani entry delete/undo karein"><i class="bi bi-trash"></i></button>`
+        : `<button class="btn btn-sm btn-outline-secondary khata-action-btn" onclick="event.stopPropagation();filterByMonth('${key}')"><i class="bi bi-list-ul me-1"></i>Details</button>`;
       return `<tr class="month-row" onclick="filterByMonth('${key}')" style="cursor:pointer;">
         <td style="padding:10px 14px;font-weight:600;">${m.lbl}</td>
-        <td style="padding:10px 14px;text-align:right;color:#198754;font-weight:600;">Rs.${fmt(m.sale)}</td>
-        <td style="padding:10px 14px;text-align:right;color:#0d6efd;font-weight:600;">Rs.${fmt(m.vasooli)}</td>
+        <td style="padding:10px 14px;text-align:right;color:#dc3545;font-weight:600;">Rs.${fmt(m.sale)}</td>
+        <td style="padding:10px 14px;text-align:right;color:#198754;font-weight:600;">Rs.${fmt(m.vasooli)}</td>
         <td style="padding:10px 14px;text-align:right;color:#6f42c1;font-weight:600;">${m.adv>0?'Rs.'+fmt(m.adv):'-'}</td>
         <td style="padding:10px 14px;text-align:right;font-weight:800;color:${pending>0?'#dc3545':pending<0?'#198754':'#555'};">
           Rs.${fmt(Math.abs(pending))}
@@ -599,17 +650,19 @@
             :`<span style="background:#e2e3e5;color:#555;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;">✓ Clear</span>`
           }
         </td>
+        <td class="no-print" style="padding:10px 14px;text-align:center;white-space:nowrap;">${actionHtml}</td>
       </tr>`;
     }).join('');
 
     const totPend=totSale+totAdv-totVas;
     el('monthly-tfoot').innerHTML=`<tr style="background:#f0f4ff;font-weight:800;border-top:2px solid #0d6efd;">
       <td style="padding:10px 14px;">TOTAL</td>
-      <td style="padding:10px 14px;text-align:right;color:#198754;">Rs.${fmt(totSale)}</td>
-      <td style="padding:10px 14px;text-align:right;color:#0d6efd;">Rs.${fmt(totVas)}</td>
+      <td style="padding:10px 14px;text-align:right;color:#dc3545;">Rs.${fmt(totSale)}</td>
+      <td style="padding:10px 14px;text-align:right;color:#198754;">Rs.${fmt(totVas)}</td>
       <td style="padding:10px 14px;text-align:right;color:#6f42c1;">Rs.${fmt(totAdv)}</td>
       <td style="padding:10px 14px;text-align:right;color:${totPend>0?'#dc3545':'#198754'};font-size:16px;">Rs.${fmt(Math.abs(totPend))}</td>
       <td style="padding:10px 14px;text-align:center;color:${totPend>0?'#dc3545':'#198754'};font-weight:800;">${totPend>0?'BAQI':'SAAF'}</td>
+      <td class="no-print" style="padding:10px 14px;text-align:center;"><button class="btn btn-sm btn-outline-success khata-action-btn" onclick="repairSelectedBalance()"><i class="bi bi-arrow-repeat me-1"></i>Fix</button></td>
     </tr>`;
   };
 
@@ -617,6 +670,7 @@
     el('tx-month-filter').value=key;
     renderTxDetail();
     el('tx-detail-title').innerHTML=`<i class="bi bi-list-ul me-1"></i>Transactions — ${new Date(key+'-01').toLocaleDateString('en-PK',{month:'long',year:'numeric'})}`;
+    setTimeout(()=>el('tx-detail-tbody')?.scrollIntoView({behavior:'smooth',block:'center'}),80);
   };
 
   // ── Transaction Detail (Paper Format) ────────────────────
@@ -680,31 +734,62 @@
     tbody.innerHTML = filteredRows.map(r=>r.row).reverse().join(''); // Show latest first in table
   };
 
-  // ── Quick Edit Balance ────────────────────────────────────
+  // ── Quick Edit Balance / Repair ─────────────────────────────
   window.quickEditBalance=async function(custId){
-    const c=allCustomers.find(x=>x.id===custId);
+    const c=allCustomers.find(x=>String(x.id)===String(custId));
     if(!c)return;
-    const current=parseFloat(c.balance)||0;
-    const val=prompt(`${c.name} ka balance change karein\nMojuda balance: Rs.${fmt(current)}\n\nNaya balance enter karein (Rs.):`, current);
+    const storedBal=parseFloat(c.balance)||0;
+    const ledgerBal=calculateCustomerLedger(c.id, allTransactions);
+    const val=prompt(`${c.name} ka balance correction karein\nCustomer card balance: Rs.${fmt(storedBal)}\nLedger balance: Rs.${fmt(ledgerBal)}\n\nNaya final balance enter karein (Rs.):`, ledgerBal);
     if(val===null)return;
-    const nb=parseFloat(val)||0;
+    const desired=parseFloat(val);
+    if(!Number.isFinite(desired)){ alert('Sahi amount enter karein.'); return; }
+    const diff=desired-ledgerBal;
+    if(Math.abs(diff)<0.01){
+      if(!confirm(`Koi adjustment transaction zaroori nahi. Sirf customer card balance Rs.${fmt(desired)} set kar doon?`))return;
+      try{
+        const {error}=await supabase.from('customers').update({balance:desired}).eq('id',c.id);
+        if(error)throw error;
+        showToast('success','Balance Fixed',`${c.name} ka balance Rs.${fmt(desired)} ho gaya.`);
+        await loadAll(); selectedCust=allCustomers.find(x=>String(x.id)===String(c.id)); if(selectedCust){custTxns=allTransactions.filter(t=>String(t.customer_id)===String(c.id)); renderDetail();}
+      }catch(e){alert('Error: '+e.message);}
+      return;
+    }
+    const txType=diff>0?'Credit':'Debit';
+    const amt=Math.abs(diff);
+    const desc=diff>0
+      ? `Manual Balance Adjustment: Udhaar correction to Rs.${fmt(desired)}`
+      : `Manual Balance Adjustment: Jama/discount correction to Rs.${fmt(desired)}`;
+    if(!confirm(`Adjustment entry create hogi:\n\nType: ${txType==='Credit'?'Debit/Udhaar add':'Credit/Jama minus'}\nAmount: Rs.${fmt(amt)}\nFinal balance: Rs.${fmt(desired)}\n\nProceed?`))return;
     try{
-      const{error}=await supabase.from('customers').update({balance:nb}).eq('id',custId);
-      if(error)throw error;
-      c.balance=nb;
-      showToast('success','Done!',`${c.name} ka balance Rs.${fmt(nb)} ho gaya!`);
-      computeSummary(); renderCustList(); renderDetail();
+      const { error: txErr } = await supabase.from('transactions').insert([{
+        customer_id: parseInt(c.id),
+        transaction_type: txType,
+        amount: amt,
+        charges: amt,
+        description: desc,
+        created_at: new Date().toISOString()
+      }]);
+      if(txErr)throw txErr;
+      await recalcAndUpdateCustomerBalance(c.id);
+      showToast('success','Adjustment Saved',`${c.name} ka final balance Rs.${fmt(desired)} save ho gaya.`);
+      await loadAll(); selectedCust=allCustomers.find(x=>String(x.id)===String(c.id)); if(selectedCust){custTxns=allTransactions.filter(t=>String(t.customer_id)===String(c.id)); renderDetail();}
     }catch(e){alert('Error: '+e.message);}
   };
 
-
-  function khataEffect(t) {
-    const amt = parseFloat(t?.amount || t?.charges) || 0;
-    const type = String(t?.transaction_type || '').toLowerCase();
-    if (type === 'debit' || type === 'recovery' || type === 'vasooli' || type === 'payment') return -amt;
-    if (type === 'credit' || type === 'advance' || type === 'cashadvance') return amt;
-    return 0;
-  }
+  window.repairCustomerBalance=async function(custId){
+    const c=allCustomers.find(x=>String(x.id)===String(custId));
+    if(!c)return;
+    const storedBal=parseFloat(c.balance)||0;
+    const ledgerBal=calculateCustomerLedger(c.id, allTransactions);
+    if(!confirm(`${c.name} ka balance transactions ke hisaab se set karna hai?\n\nCurrent customer balance: Rs.${fmt(storedBal)}\nLedger calculated balance: Rs.${fmt(ledgerBal)}\n\nYe old wrong direct balance ko thik karega.`))return;
+    try{
+      const finalBal=await recalcAndUpdateCustomerBalance(c.id);
+      showToast('success','Balance Recalculated',`${c.name} ka balance Rs.${fmt(finalBal)} ho gaya.`);
+      await loadAll(); selectedCust=allCustomers.find(x=>String(x.id)===String(c.id)); if(selectedCust){custTxns=allTransactions.filter(t=>String(t.customer_id)===String(c.id)); renderDetail();}
+    }catch(e){alert('Error: '+e.message);}
+  };
+  window.repairSelectedBalance=function(){ if(selectedCust) repairCustomerBalance(selectedCust.id); };
 
   function khataTypeLabel(type) {
     if (type === 'Credit') return 'Debit/Udhaar add karega';
@@ -716,28 +801,28 @@
   window.editKhataTransaction = async function(txId) {
     const t = allTransactions.find(x => Number(x.id) === Number(txId));
     if (!t) { alert('Entry nahi mili. Page refresh karein.'); return; }
-    const cust = allCustomers.find(c => Number(c.id) === Number(t.customer_id));
+    const cust = allCustomers.find(c => String(c.id) === String(t.customer_id));
     if (!cust) { alert('Customer nahi mila.'); return; }
 
-    const oldAmt = parseFloat(t.amount || t.charges) || 0;
+    const oldAmt = txAmount(t);
     const newAmtRaw = prompt(`Entry update karein\nCustomer: ${cust.name}\nType: ${khataTypeLabel(t.transaction_type)}\nOld amount: Rs.${fmt(oldAmt)}\n\nNew amount enter karein:`, oldAmt);
     if (newAmtRaw === null) return;
     const newAmt = parseFloat(newAmtRaw);
     if (!Number.isFinite(newAmt) || newAmt < 0) { alert('Sahi amount enter karein.'); return; }
 
-    const newType = prompt(`Type update karein:\nCredit = Debit/Udhaar add\nDebit = Credit/Jama minus\nAdvance = Cash advance add\n\nCurrent: ${t.transaction_type}`, t.transaction_type || 'Credit');
+    const newType = prompt(`Type update karein:\nCredit = Debit/Udhaar add\nDebit = Credit/Jama minus\nAdvance = Cash advance out add\n\nCurrent: ${t.transaction_type}`, t.transaction_type || 'Credit');
     if (newType === null) return;
     const cleanType = String(newType || '').trim();
     if (!['Credit','Debit','Advance'].includes(cleanType)) { alert('Type sirf Credit, Debit, ya Advance ho sakta hai.'); return; }
 
     const newDesc = prompt('Description / note update karein:', t.description || '') ?? (t.description || '');
 
+    const currentLedger = calculateCustomerLedger(cust.id, allTransactions);
     const oldEffect = khataEffect(t);
     const newEffect = khataEffect({ transaction_type: cleanType, amount: newAmt });
-    const currentBal = parseFloat(cust.balance) || 0;
-    const newBal = currentBal - oldEffect + newEffect;
+    const estimatedNewBal = currentLedger - oldEffect + newEffect;
 
-    if (!confirm(`Update confirm?\n\nOld balance: Rs.${fmt(currentBal)}\nNew balance: Rs.${fmt(newBal)}\n\nYe customer balance bhi adjust karega.`)) return;
+    if (!confirm(`Update confirm?\n\nLedger balance abhi: Rs.${fmt(currentLedger)}\nUpdate ke baad: Rs.${fmt(estimatedNewBal)}\n\nYe customer balance bhi recalculate karega.`)) return;
 
     try {
       const { error: tErr } = await supabase.from('transactions').update({
@@ -745,43 +830,39 @@
         amount: newAmt,
         charges: newAmt,
         description: newDesc,
-        balance_before: currentBal - oldEffect,
-        balance_after: newBal,
-        customer_balance_after: newBal
+        balance_after: estimatedNewBal,
+        customer_balance_after: estimatedNewBal
       }).eq('id', txId);
       if (tErr) throw tErr;
 
-      const { error: cErr } = await supabase.from('customers').update({ balance: newBal }).eq('id', cust.id);
-      if (cErr) throw cErr;
-
-      showToast('success','Entry Updated',`${cust.name} ka balance Rs.${fmt(newBal)} ho gaya.`);
+      const finalBal = await recalcAndUpdateCustomerBalance(cust.id);
+      showToast('success','Entry Updated',`${cust.name} ka balance Rs.${fmt(finalBal)} ho gaya.`);
       await loadAll();
-      selectedCust = allCustomers.find(c => Number(c.id) === Number(cust.id));
-      if (selectedCust) { custTxns = allTransactions.filter(x => Number(x.customer_id) === Number(selectedCust.id)); renderDetail(); }
+      selectedCust = allCustomers.find(c => String(c.id) === String(cust.id));
+      if (selectedCust) { custTxns = allTransactions.filter(x => String(x.customer_id) === String(selectedCust.id)); renderDetail(); }
     } catch(e) { alert('Error: ' + e.message); }
   };
 
   window.deleteKhataTransaction = async function(txId) {
     const t = allTransactions.find(x => Number(x.id) === Number(txId));
     if (!t) { alert('Entry nahi mili. Page refresh karein.'); return; }
-    const cust = allCustomers.find(c => Number(c.id) === Number(t.customer_id));
+    const cust = allCustomers.find(c => String(c.id) === String(t.customer_id));
     if (!cust) { alert('Customer nahi mila.'); return; }
     const effect = khataEffect(t);
-    const currentBal = parseFloat(cust.balance) || 0;
-    const newBal = currentBal - effect;
-    const amt = parseFloat(t.amount || t.charges) || 0;
+    const currentLedger = calculateCustomerLedger(cust.id, allTransactions);
+    const newLedger = currentLedger - effect;
+    const amt = txAmount(t);
 
-    if (!confirm(`Is khata entry ko delete/undo karna hai?\n\nCustomer: ${cust.name}\nType: ${t.transaction_type}\nAmount: Rs.${fmt(amt)}\nCurrent balance: Rs.${fmt(currentBal)}\nAfter delete: Rs.${fmt(newBal)}`)) return;
+    if (!confirm(`Is khata entry ko delete/undo karna hai?\n\nCustomer: ${cust.name}\nType: ${t.transaction_type}\nAmount: Rs.${fmt(amt)}\nLedger balance abhi: Rs.${fmt(currentLedger)}\nAfter delete: Rs.${fmt(newLedger)}`)) return;
 
     try {
       const { error: dErr } = await supabase.from('transactions').delete().eq('id', txId);
       if (dErr) throw dErr;
-      const { error: cErr } = await supabase.from('customers').update({ balance: newBal }).eq('id', cust.id);
-      if (cErr) throw cErr;
-      showToast('success','Entry Deleted',`${cust.name} ka balance Rs.${fmt(newBal)} ho gaya.`);
+      const finalBal = await recalcAndUpdateCustomerBalance(cust.id);
+      showToast('success','Entry Deleted',`${cust.name} ka balance Rs.${fmt(finalBal)} ho gaya.`);
       await loadAll();
-      selectedCust = allCustomers.find(c => Number(c.id) === Number(cust.id));
-      if (selectedCust) { custTxns = allTransactions.filter(x => Number(x.customer_id) === Number(selectedCust.id)); renderDetail(); }
+      selectedCust = allCustomers.find(c => String(c.id) === String(cust.id));
+      if (selectedCust) { custTxns = allTransactions.filter(x => String(x.customer_id) === String(selectedCust.id)); renderDetail(); }
     } catch(e) { alert('Error: ' + e.message); }
   };
 
@@ -894,30 +975,36 @@ ${c.phone?`<div class="info-box" style="background:#cce5ff;border:1px solid #006
     const cust=allCustomers.find(c=>c.id==custId);
     if(!cust)return;
     
-    const currentBal=parseFloat(cust.balance)||0;
+    const ledgerBal=calculateCustomerLedger(custId, allTransactions);
     // Credit (Debit Column) adds to balance, Debit (Credit Column) subtracts
     const netAmount = txType === 'Credit' ? amount : -amount;
-    const newBal=method==='set'? netAmount : (currentBal + netAmount);
+    const finalTarget = method==='set' ? netAmount : (ledgerBal + netAmount);
+    const diff = finalTarget - ledgerBal;
+    const actualType = diff >= 0 ? 'Credit' : 'Debit';
+    const actualAmount = Math.abs(diff);
 
     const [yr,mo]=monthVal.split('-').map(Number);
     const txDate=new Date(yr,mo,0); // last day
     const monthLabel=txDate.toLocaleDateString('en-PK',{month:'long',year:'numeric'});
-    const desc=`Opening Balance (${monthLabel}): ${note}`;
+    const desc=`Opening Balance (${monthLabel}) ${method==='set'?'SET':'ADD'}: ${note}`;
     
     try{
-      const{error}=await supabase.from('customers').update({balance:newBal}).eq('id',custId);
-      if(error)throw error;
-      await supabase.from('transactions').insert([{
-        customer_id:parseInt(custId),
-        transaction_type: txType,
-        amount: amount,
-        description: desc,
-        created_at:txDate.toISOString()
-      }]);
-      cust.balance=newBal;
-      showToast('success','Save Ho Gaya!',`${cust.name} — ${monthLabel} ka record save ho gaya!`);
-      computeSummary(); renderCustList();
-      if(selectedCust?.id==custId){ selectCust(cust.id); }
+      if(actualAmount > 0.009){
+        const { error: txErr } = await supabase.from('transactions').insert([{
+          customer_id:parseInt(custId),
+          transaction_type: actualType,
+          amount: actualAmount,
+          charges: actualAmount,
+          description: desc,
+          created_at:txDate.toISOString()
+        }]);
+        if(txErr) throw txErr;
+      }
+      const finalBal = await recalcAndUpdateCustomerBalance(custId);
+      cust.balance=finalBal;
+      showToast('success','Save Ho Gaya!',`${cust.name} — ${monthLabel} ka record save ho gaya! Balance: Rs.${fmt(finalBal)}`);
+      await loadAll();
+      if(selectedCust?.id==custId){ selectedCust=allCustomers.find(c=>String(c.id)===String(custId)); custTxns=allTransactions.filter(t=>String(t.customer_id)===String(custId)); renderDetail(); }
       el('ob-amount').value=''; el('ob-note').value='';
       bootstrap.Modal.getInstance(el('oldBalanceModal')).hide();
     }catch(e){alert('Error: '+e.message);}
@@ -1007,21 +1094,18 @@ ${c.phone?`<div class="info-box" style="background:#cce5ff;border:1px solid #006
         const monthLabel=txDate.toLocaleDateString('en-PK',{month:'long',year:'numeric'});
 
         const cust = allCustomers.find(c => c.id === u.id);
-        const currentBal = parseFloat(cust.balance) || 0;
-        // In bulk, if we use u.balance, we are usually SETTING the initial state for that month.
-        // But to be safe, let's calculate the net effect.
-        const netAmount = u.txType === 'Credit' ? u.balance : -u.balance;
-        
-        const{error}=await supabase.from('customers').update({balance: u.balance}).eq('id',u.id);
-        if(error)throw error;
-        await supabase.from('transactions').insert([{
+        // Bulk old balance acts as ADD entry, not silent overwrite.
+        const { error: txErr } = await supabase.from('transactions').insert([{
           customer_id: u.id,
           transaction_type: u.txType,
           amount: Math.abs(u.balance),
+          charges: Math.abs(u.balance),
           description:`Opening Balance (${monthLabel}) — Purana record`,
           created_at:txDate.toISOString()
         }]);
-        if(cust) cust.balance = u.balance;
+        if(txErr)throw txErr;
+        const finalBal = await recalcAndUpdateCustomerBalance(u.id);
+        if(cust) cust.balance = finalBal;
       }
       showToast('success','Save Ho Gaya!',`${updates.length} customers ka pending daakhil ho gaya!`);
       computeSummary(); renderCustList(); buildBulkTable();
