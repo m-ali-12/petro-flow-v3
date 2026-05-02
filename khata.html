@@ -203,8 +203,19 @@
       <div class="modal-body">
         <div class="mb-3">
           <label class="form-label fw-bold">Customer <span class="text-danger">*</span></label>
-          <div id="adv-cust-display" class="alert alert-info py-2 mb-2" style="display:none;"></div>
-          <small class="text-muted d-block mb-1">Pehle main list mein customer select karein</small>
+          <input type="hidden" id="adv-customer-hidden">
+          <div style="position:relative;">
+            <input type="text" id="adv-cust-search" class="form-control" placeholder="🔍 Sr# ya customer naam likhein...">
+            <div id="adv-cust-list" class="shadow-sm" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #ddd;border-radius:10px;max-height:260px;overflow:auto;z-index:1060;"></div>
+          </div>
+          <div id="adv-cust-selected" class="alert alert-info py-2 mt-2 mb-0" style="display:none;align-items:center;justify-content:space-between;gap:10px;">
+            <div>
+              <strong id="adv-cust-text"></strong><br>
+              <small id="adv-cust-bal"></small>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="clearAdvDepositCust()">Change</button>
+          </div>
+          <small class="text-muted d-block mt-1">List se customer select karein. Agar left side se customer selected hai to woh auto select ho jayega.</small>
         </div>
         <div class="mb-3">
           <label class="form-label fw-bold">Jama Amount (Rs.) <span class="text-danger">*</span></label>
@@ -366,6 +377,7 @@
   let allCustomers = [];
   let allTransactions = [];
   let selectedCust = null;
+  let advDepositCust = null;
   let custTxns = [];
   let custFilter = 'pending';
 
@@ -928,47 +940,113 @@ ${c.phone?`<div class="info-box" style="background:#cce5ff;border:1px solid #006
     document.querySelectorAll('.bulk-month-input').forEach(inp => inp.value = val);
   });
 
+  function buildAdvDepositDropdown(){
+    const searchEl = el('adv-cust-search');
+    const listEl = el('adv-cust-list');
+    if(!searchEl || !listEl) return;
+
+    function setSelected(cust){
+      advDepositCust = cust || null;
+      el('adv-customer-hidden').value = cust?.id || '';
+      if(cust){
+        searchEl.value = '';
+        searchEl.style.display = 'none';
+        listEl.style.display = 'none';
+        el('adv-cust-text').textContent = `#${cust.sr_no || '-'} — ${cust.name}`;
+        const b = parseFloat(cust.balance) || 0;
+        el('adv-cust-bal').textContent = b > 0 ? `Mojuda baqi: Rs.${fmt(b)}` : b < 0 ? `Advance: Rs.${fmt(Math.abs(b))}` : 'Account saaf';
+        el('adv-cust-bal').style.color = b > 0 ? '#dc3545' : b < 0 ? '#0d6efd' : '#198754';
+        el('adv-cust-selected').style.display = 'flex';
+      }else{
+        searchEl.style.display = 'block';
+        el('adv-cust-selected').style.display = 'none';
+      }
+    }
+
+    function render(q){
+      const term = String(q || '').toLowerCase().trim();
+      const filtered = (term
+        ? allCustomers.filter(c => String(c.sr_no || '').includes(term) || String(c.name || '').toLowerCase().includes(term) || String(c.phone || '').includes(term))
+        : allCustomers
+      ).slice(0, 120);
+
+      listEl.innerHTML = filtered.map(c => {
+        const b = parseFloat(c.balance) || 0;
+        const label = b > 0 ? 'Baqi' : b < 0 ? 'Advance' : 'Saaf';
+        const color = b > 0 ? '#dc3545' : b < 0 ? '#0d6efd' : '#198754';
+        return `<div class="adv-item" data-id="${c.id}"
+          style="padding:10px 14px;cursor:pointer;display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid #f1f3f5;font-size:14px;">
+          <span><span style="background:#198754;color:#fff;border-radius:4px;padding:1px 7px;font-size:11px;font-weight:700;margin-right:8px;">#${c.sr_no || '-'}</span>${c.name || '-'}</span>
+          <span style="font-size:12px;font-weight:700;color:${color};white-space:nowrap;">${label}: Rs.${fmt(Math.abs(b))}</span>
+        </div>`;
+      }).join('') || '<div style="padding:12px;text-align:center;color:#888">Customer nahi mila</div>';
+      listEl.style.display = 'block';
+
+      listEl.querySelectorAll('.adv-item').forEach(item => {
+        item.addEventListener('mouseenter', () => item.style.background = '#f8fff9');
+        item.addEventListener('mouseleave', () => item.style.background = '');
+        item.addEventListener('mousedown', e => {
+          e.preventDefault();
+          const cust = allCustomers.find(c => String(c.id) === String(item.dataset.id));
+          setSelected(cust);
+        });
+      });
+    }
+
+    if(!searchEl.dataset.bound){
+      searchEl.addEventListener('input', () => render(searchEl.value));
+      searchEl.addEventListener('focus', () => render(searchEl.value));
+      searchEl.addEventListener('blur', () => setTimeout(() => listEl.style.display = 'none', 200));
+      searchEl.dataset.bound = '1';
+    }
+
+    window.clearAdvDepositCust = function(){
+      setSelected(null);
+      searchEl.value = '';
+      listEl.style.display = 'none';
+      setTimeout(() => searchEl.focus(), 50);
+    };
+
+    if(selectedCust) setSelected(selectedCust);
+    else setSelected(null);
+  }
+
   window.saveAdvanceDeposit = async function() {
-    if(!selectedCust) { alert('Pehle list mein se customer select karein!'); return; }
+    const cust = advDepositCust || selectedCust;
+    if(!cust) { alert('Pehle customer select karein!'); return; }
     const amt = parseFloat(el('adv-amount')?.value) || 0;
     const note = el('adv-note')?.value || '';
     if(amt <= 0) { alert('Sahi amount enter karein'); return; }
 
     try {
-      const currentBal = parseFloat(selectedCust.balance) || 0;
-      // In our logic: Debit means 'Money given by customer' (Credit/Jama)
-      // So we subtract from the pending balance.
+      const currentBal = parseFloat(cust.balance) || 0;
       const newBal = currentBal - amt;
 
-      const { error: updErr } = await supabase.from('customers').update({ balance: newBal }).eq('id', selectedCust.id);
+      const { error: updErr } = await supabase.from('customers').update({ balance: newBal }).eq('id', cust.id);
       if(updErr) throw updErr;
 
       const { error: txErr } = await supabase.from('transactions').insert([{
-        customer_id: selectedCust.id,
+        customer_id: cust.id,
         transaction_type: 'Debit',
         amount: amt,
-        description: `Advance Deposit / Jama: ${note}`,
+        charges: amt,
+        description: `Advance Deposit / Jama: ${note || 'Customer advance'}`,
         created_at: new Date().toISOString()
       }]);
       if(txErr) throw txErr;
 
-      showToast('success', 'Jama Save Ho Gaya!', `${selectedCust.name} ka Rs.${fmt(amt)} deposit record ho gaya!`);
+      showToast('success', 'Jama Save Ho Gaya!', `${cust.name} ka Rs.${fmt(amt)} deposit record ho gaya!`);
       bootstrap.Modal.getInstance(el('advanceDepositModal')).hide();
       el('adv-amount').value = ''; el('adv-note').value = '';
-      
-      // Refresh
-      selectedCust.balance = newBal;
+      advDepositCust = null;
+      cust.balance = newBal;
+      if(selectedCust && String(selectedCust.id) === String(cust.id)) selectedCust.balance = newBal;
       loadAll();
     } catch(e) { alert('Error: ' + e.message); }
   };
 
   el('advanceDepositModal')?.addEventListener('show.bs.modal', () => {
-    if(selectedCust) {
-      el('adv-cust-display').style.display = 'block';
-      el('adv-cust-display').innerHTML = `<strong>#${selectedCust.sr_no} — ${selectedCust.name}</strong><br>Mojuda Baqi: Rs.${fmt(selectedCust.balance)}`;
-    } else {
-      el('adv-cust-display').style.display = 'none';
-    }
+    buildAdvDepositDropdown();
   });
 
   // ── Init ──────────────────────────────────────────────────

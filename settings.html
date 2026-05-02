@@ -42,10 +42,15 @@
             </div>
             <small class="text-muted">Current: Rs. <span id="current-diesel-price">0</span></small>
           </div>
-          <div class="col-md-4">
-            <label class="form-label">Effective Date *</label>
-            <input id="price-effective-date" class="form-control" type="date" required>
-            <small class="text-muted">Price applies from this date</small>
+          <div class="col-md-2">
+            <label class="form-label">Start Date *</label>
+            <input id="price-start-date" class="form-control" type="date" required>
+            <small class="text-muted">From</small>
+          </div>
+          <div class="col-md-2">
+            <label class="form-label">End Date</label>
+            <input id="price-end-date" class="form-control" type="date">
+            <small class="text-muted">Leave blank if current</small>
           </div>
         </div>
 
@@ -81,10 +86,15 @@
             </div>
             <small class="text-muted">Current: Rs. <span id="current-open-mobil-price">0</span></small>
           </div>
-          <div class="col-md-4">
-            <label class="form-label">Effective Date *</label>
-            <input id="mobil-effective-date" class="form-control" type="date" required>
-            <small class="text-muted">Price applies from this date</small>
+          <div class="col-md-2">
+            <label class="form-label">Start Date *</label>
+            <input id="mobil-start-date" class="form-control" type="date" required>
+            <small class="text-muted">From</small>
+          </div>
+          <div class="col-md-2">
+            <label class="form-label">End Date</label>
+            <input id="mobil-end-date" class="form-control" type="date">
+            <small class="text-muted">Leave blank if current</small>
           </div>
         </div>
 
@@ -117,14 +127,15 @@
               <table class="table table-sm">
                 <thead>
                   <tr>
-                    <th>Date</th>
+                    <th>Start Date</th>
+                    <th>End Date</th>
                     <th>Petrol</th>
                     <th>Diesel</th>
                     <th>Updated By</th>
                   </tr>
                 </thead>
                 <tbody id="fuel-history-table">
-                  <tr><td colspan="4" class="text-center text-muted">No history yet</td></tr>
+                  <tr><td colspan="5" class="text-center text-muted">No history yet</td></tr>
                 </tbody>
               </table>
             </div>
@@ -136,14 +147,15 @@
               <table class="table table-sm">
                 <thead>
                   <tr>
-                    <th>Date</th>
+                    <th>Start Date</th>
+                    <th>End Date</th>
                     <th>Car Mobil</th>
                     <th>Open Mobil</th>
                     <th>Updated By</th>
                   </tr>
                 </thead>
                 <tbody id="mobil-history-table">
-                  <tr><td colspan="4" class="text-center text-muted">No history yet</td></tr>
+                  <tr><td colspan="5" class="text-center text-muted">No history yet</td></tr>
                 </tbody>
               </table>
             </div>

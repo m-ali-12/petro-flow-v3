@@ -346,7 +346,7 @@
   // ============================================================
   window.loadCompanyTransactions = async function (filters = {}) {
     const tbody = el('company-txn-table');
-    if (tbody) tbody.innerHTML = '<tr><td colspan="9" class="text-center py-3 text-muted"><div class="spinner-border spinner-border-sm me-2"></div>Loading...</td></tr>';
+    if (tbody) tbody.innerHTML = '<tr><td colspan="11" class="text-center py-3 text-muted"><div class="spinner-border spinner-border-sm me-2"></div>Loading...</td></tr>';
 
     try {
       const account = await getCompanyAccount();
@@ -369,7 +369,7 @@
       renderTxnTable(txns);
       updateTxnTotals(txns);
     } catch (e) {
-      if (tbody) tbody.innerHTML = `<tr><td colspan="9" class="text-center text-danger py-3">Error: ${esc(e.message)}</td></tr>`;
+      if (tbody) tbody.innerHTML = `<tr><td colspan="11" class="text-center text-danger py-3">Error: ${esc(e.message)}</td></tr>`;
     }
   };
 
@@ -388,29 +388,58 @@
     }[type] || { label: type || 'Transaction', bg:'#f8f9fa', clr:'#333' };
   }
 
+  function docTypeFor(t) {
+    const type = String(t.txn_type || '').toLowerCase();
+    if (type === 'stock_purchase') return 'FL';
+    if (type.includes('repayment')) return 'DZ';
+    if (type === 'member_usage') return 'RV';
+    if (type === 'initial_credit') return 'OP';
+    if (type.includes('charge') || type === 'adjustment') return 'JV';
+    return 'TR';
+  }
+
+  function docNoFor(t, i) {
+    return t.document_no || t.doc_no || t.invoice_no || t.slip_no || t.id || (900000 + i);
+  }
+
+  function referenceFor(t) {
+    return t.reference_no || t.reference || t.invoice_no || t.card_no || t.bank_ref || '-';
+  }
+
   function renderTxnTable(txns) {
     const tbody = el('company-txn-table');
     if (!tbody) return;
     if (!txns.length) {
-      tbody.innerHTML = '<tr><td colspan="9" class="text-center py-4 text-muted"><i class="bi bi-inbox fs-4 d-block mb-2"></i>Koi transaction nahi</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="11" class="text-center py-4 text-muted"><i class="bi bi-inbox fs-4 d-block mb-2"></i>Koi transaction nahi</td></tr>';
       return;
     }
 
-    tbody.innerHTML = txns.map((t, i) => {
+    const chronological = [...txns].sort((a, b) => new Date(a.txn_date || a.created_at || 0) - new Date(b.txn_date || b.created_at || 0));
+    const initialBalance = num(lastCompanySummary?.initial_credit ?? cachedCompanyAccount?.initial_credit) || 0;
+    let running = initialBalance;
+
+    tbody.innerHTML = chronological.map((t, i) => {
       const c = txnConfig(t.txn_type);
-      const isOut = t.direction === 'out';
-      const clr = isOut ? '#dc3545' : '#198754';
-      const sign = isOut ? '+' : '−';
       const net = Math.abs(num(t.net_amount) || (num(t.amount) + num(t.charges)) || 0);
+      const isOut = t.direction === 'out';
+      const debit = isOut ? net : 0;
+      const credit = isOut ? 0 : net;
+      running = running + debit - credit;
+      const desc = t.description || c.label || '-';
+      const openingClosing = i === 0 ? `Open: Rs.${fmt(initialBalance)}` : '0.00';
+      const badgeStyle = `padding:2px 8px;border-radius:4px;font-size:11px;font-weight:800;background:${c.bg};color:${c.clr};white-space:nowrap;`;
+
       return `<tr>
-        <td class="text-muted">${i + 1}</td>
-        <td style="font-size:12px;">${dateOnly(t.txn_date)}</td>
-        <td><span style="padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;background:${c.bg};color:${c.clr};">${esc(c.label)}</span></td>
-        <td style="font-weight:700;color:${clr};">${sign} Rs.${fmt(t.amount)}</td>
-        <td style="font-size:12px;color:#888;">${num(t.charges) > 0 ? 'Rs.' + fmt(t.charges) : '-'}</td>
-        <td style="font-weight:800;color:${clr};">${sign} Rs.${fmt(net)}</td>
-        <td style="font-size:12px;">${t.members ? '#' + esc(t.members.sr_no) + ' ' + esc(t.members.name) : '-'}</td>
-        <td style="font-size:12px;color:#555;">${esc(t.description || '-')}</td>
+        <td style="font-size:12px;white-space:nowrap;">${dateOnly(t.created_at || t.txn_date)}</td>
+        <td style="font-size:12px;white-space:nowrap;">${dateOnly(t.txn_date || t.created_at)}</td>
+        <td style="font-size:12px;font-weight:700;">${esc(docNoFor(t, i))}</td>
+        <td style="font-size:12px;">${esc(referenceFor(t))}</td>
+        <td><span style="${badgeStyle}">${esc(docTypeFor(t))}</span></td>
+        <td style="font-size:12px;min-width:220px;">${esc(desc)}</td>
+        <td class="text-end" style="font-size:12px;">${openingClosing}</td>
+        <td class="text-end" style="font-weight:800;color:#dc3545;">${debit ? 'Rs.' + fmt(debit) : '-'}</td>
+        <td class="text-end" style="font-weight:800;color:#198754;">${credit ? 'Rs.' + fmt(credit) : '-'}</td>
+        <td class="text-end" style="font-weight:900;color:${running >= 0 ? '#dc3545' : '#198754'};">Rs.${fmt(Math.abs(running))}${running < 0 ? ' Adv' : ''}</td>
         <td><button onclick="window.deleteCompanyTxn(${Number(t.id)})" class="btn btn-sm btn-outline-danger" title="Delete"><i class="bi bi-trash"></i></button></td>
       </tr>`;
     }).join('');

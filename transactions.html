@@ -20,6 +20,8 @@
   #transactions-table td:nth-child(3), #advance-list-tbody td:nth-child(3) { min-width:140px; }
   #transactions-table td:nth-child(9) { max-width:240px; white-space:normal; }
   #advance-pagination-container { border-top:1px solid #eee; }
+  #pagination-container-top { border-top:1px solid #eef2f7; border-bottom:1px solid #eef2f7; }
+  .tx-type-badge { user-select:none; -webkit-user-select:none; }
 
   /* Print: hide everything except table */
   @media print {
@@ -179,6 +181,7 @@
       <h6 class="mb-0">Transaction History</h6>
       <span class="badge bg-secondary" id="transaction-count">0 transactions</span>
     </div>
+    <div id="pagination-container-top"></div>
     <div class="card-body p-0">
       <div class="table-responsive">
         <table class="table table-hover table-sm mb-0">

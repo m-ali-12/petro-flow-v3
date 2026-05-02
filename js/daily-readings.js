@@ -97,11 +97,14 @@
 
       // price_history JSONB array se latest price nikalo (settings-page.js ka exact logic)
       if (data.price_history && data.price_history.length > 0) {
-        const sorted = [...data.price_history].sort((a, b) => new Date(b.date) - new Date(a.date));
-        const latest = sorted[0];
+        const today = new Date();
+        const sorted = [...data.price_history].map(h => ({...h, start: h.start_date || h.date, end: h.end_date || ''}))
+          .filter(h => h.start)
+          .sort((a, b) => new Date(b.start) - new Date(a.start));
+        const latest = sorted.find(h => new Date(h.start) <= today && (!h.end || today <= new Date(h.end + 'T23:59:59'))) || sorted[0];
         petrolPrice = parseFloat(latest.petrol) || 0;
         dieselPrice = parseFloat(latest.diesel) || 0;
-        console.log('Prices from price_history:', latest.date, '→ Petrol:', petrolPrice, 'Diesel:', dieselPrice);
+        console.log('Prices from price_history:', latest.start, latest.end ? ('to '+latest.end) : 'current', '→ Petrol:', petrolPrice, 'Diesel:', dieselPrice);
       }
       // Fallback: direct columns (purani entries ke liye)
       else if (data.petrol_price || data.diesel_price) {

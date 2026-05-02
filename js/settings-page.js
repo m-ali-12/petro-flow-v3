@@ -74,10 +74,12 @@
       if ($('car-mobil-price')) $('car-mobil-price').value = data.car_mobil_price || '';
       if ($('open-mobil-price')) $('open-mobil-price').value = data.open_mobil_price || '';
 
-      // Effective Date default: Today
+      // Price period defaults
       const today = new Date().toISOString().split('T')[0];
-      if ($('price-effective-date')) $('price-effective-date').value = today;
-      if ($('mobil-effective-date')) $('mobil-effective-date').value = today;
+      if ($('price-start-date')) $('price-start-date').value = today;
+      if ($('price-end-date')) $('price-end-date').value = '';
+      if ($('mobil-start-date')) $('mobil-start-date').value = today;
+      if ($('mobil-end-date')) $('mobil-end-date').value = '';
 
       // Update time
       if ($('fuel-price-update-time')) {
@@ -134,11 +136,14 @@
     const fuelTbody = $('fuel-history-table');
     if (fuelTbody) {
       if (fuelHistory.length === 0) {
-        fuelTbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">No history yet</td></tr>';
+        fuelTbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No history yet</td></tr>';
       } else {
-        fuelTbody.innerHTML = [...fuelHistory].sort((a,b) => new Date(b.date) - new Date(a.date)).map(h => `
+        fuelTbody.innerHTML = [...fuelHistory]
+          .sort((a,b) => new Date(b.start_date || b.date) - new Date(a.start_date || a.date))
+          .map(h => `
           <tr>
-            <td>${h.date}</td>
+            <td>${h.start_date || h.date || '-'}</td>
+            <td>${h.end_date || 'Current'}</td>
             <td class="text-primary fw-bold">Rs. ${fmt(h.petrol)}</td>
             <td class="text-warning fw-bold">Rs. ${fmt(h.diesel)}</td>
             <td class="small text-muted">${h.updated_by || 'Unknown'}</td>
@@ -152,11 +157,14 @@
     const mobilTbody = $('mobil-history-table');
     if (mobilTbody) {
       if (mobilHistory.length === 0) {
-        mobilTbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">No history yet</td></tr>';
+        mobilTbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No history yet</td></tr>';
       } else {
-        mobilTbody.innerHTML = [...mobilHistory].sort((a,b) => new Date(b.date) - new Date(a.date)).map(h => `
+        mobilTbody.innerHTML = [...mobilHistory]
+          .sort((a,b) => new Date(b.start_date || b.date) - new Date(a.start_date || a.date))
+          .map(h => `
           <tr>
-            <td>${h.date}</td>
+            <td>${h.start_date || h.date || '-'}</td>
+            <td>${h.end_date || 'Current'}</td>
             <td class="text-success fw-bold">Rs. ${fmt(h.car)}</td>
             <td class="text-info fw-bold">Rs. ${fmt(h.open)}</td>
             <td class="small text-muted">${h.updated_by || 'Unknown'}</td>
@@ -170,9 +178,10 @@
   window.saveFuelPricesWithHistory = async function () {
     const petrol = parseFloat($('petrol-price').value);
     const diesel = parseFloat($('diesel-price').value);
-    const date = $('price-effective-date').value;
+    const startDate = $('price-start-date').value;
+    const endDate = $('price-end-date')?.value || '';
 
-    if (isNaN(petrol) || isNaN(diesel) || !date) {
+    if (isNaN(petrol) || isNaN(diesel) || !startDate) {
       showToast('Please fill all required fields correctly.', 'warning');
       return;
     }
@@ -182,8 +191,9 @@
       const user = window.currentUserProfile?.full_name || 'Admin';
 
       // Check if entry for this date already exists, update it, or add new
-      const existingIdx = history.findIndex(h => h.date === date);
-      const newEntry = { date, petrol, diesel, updated_by: user };
+      if (endDate && new Date(endDate) < new Date(startDate)) { showToast('End date start date se pehle nahi ho sakti.', 'warning'); return; }
+      const existingIdx = history.findIndex(h => (h.start_date || h.date) === startDate);
+      const newEntry = { date: startDate, start_date: startDate, end_date: endDate || null, petrol, diesel, updated_by: user };
 
       if (existingIdx >= 0) {
         history[existingIdx] = newEntry;
@@ -231,9 +241,10 @@
   window.saveMobilPricesWithHistory = async function () {
     const car = parseFloat($('car-mobil-price').value);
     const open = parseFloat($('open-mobil-price').value);
-    const date = $('mobil-effective-date').value;
+    const startDate = $('mobil-start-date').value;
+    const endDate = $('mobil-end-date')?.value || '';
 
-    if (isNaN(car) || isNaN(open) || !date) {
+    if (isNaN(car) || isNaN(open) || !startDate) {
       showToast('Please fill all required fields correctly.', 'warning');
       return;
     }
@@ -242,8 +253,9 @@
       const history = currentSettings?.mobil_history || [];
       const user = window.currentUserProfile?.full_name || 'Admin';
 
-      const existingIdx = history.findIndex(h => h.date === date);
-      const newEntry = { date, car, open, updated_by: user };
+      if (endDate && new Date(endDate) < new Date(startDate)) { showToast('End date start date se pehle nahi ho sakti.', 'warning'); return; }
+      const existingIdx = history.findIndex(h => (h.start_date || h.date) === startDate);
+      const newEntry = { date: startDate, start_date: startDate, end_date: endDate || null, car, open, updated_by: user };
 
       if (existingIdx >= 0) {
         history[existingIdx] = newEntry;

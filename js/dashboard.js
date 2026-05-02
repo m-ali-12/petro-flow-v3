@@ -3,6 +3,8 @@
 // Dashboard Functions - Error Free
 // =============================================
 
+let dashboardTodayTransactions = [];
+
 // Wait for DOM and auth
 // Wait for DOM and then Auth
 document.addEventListener('DOMContentLoaded', function() {
@@ -108,16 +110,29 @@ async function loadTodaySummary() {
         let sales = 0;
         let vasooli = 0;
         let expenses = 0;
+        dashboardTodayTransactions = data || [];
+        const customerIds = [...new Set(dashboardTodayTransactions.map(t => t.customer_id).filter(Boolean))];
+        if (customerIds.length) {
+            const { data: custData } = await window.supabaseClient
+                .from('customers')
+                .select('id,name,sr_no,balance')
+                .in('id', customerIds);
+            const cMap = {};
+            (custData || []).forEach(c => cMap[c.id] = c);
+            dashboardTodayTransactions.forEach(t => { t._customer = cMap[t.customer_id] || null; t._customerName = cMap[t.customer_id]?.name || null; });
+        }
         
-        if (data && data.length > 0) {
-            data.forEach(t => {
-                if (t.transaction_type === 'Credit') sales += parseFloat(t.amount || 0);
-                else if (t.transaction_type === 'Debit') vasooli += parseFloat(t.amount || 0);
-                else if (t.transaction_type === 'Expense') expenses += parseFloat(t.amount || 0);
+        if (dashboardTodayTransactions.length > 0) {
+            dashboardTodayTransactions.forEach(t => {
+                const a = parseFloat(t.charges ?? t.amount ?? 0) || 0;
+                if (t.transaction_type === 'Credit' || t.transaction_type === 'CashSale') sales += a;
+                else if (t.transaction_type === 'Debit') vasooli += a;
+                else if (t.transaction_type === 'Expense') expenses += a;
             });
         }
         
         setSummaryDisplay(sales, vasooli, expenses);
+        bindDashboardSummaryCards();
         
     } catch (error) {
         console.error('Summary load exception:', error);
@@ -221,17 +236,75 @@ function displayTransactions(transactions) {
         <tr>
             <td>${new Date(t.created_at).toLocaleTimeString('en-PK', {hour: '2-digit', minute: '2-digit'})}</td>
             <td>${t._customerName || 'N/A'}</td>
-            <td><span class="badge bg-${getTypeBadge(t.transaction_type)}">${t.transaction_type}</span></td>
-            <td>Rs. ${formatNumber(t.amount)}</td>
+            <td><span class="badge bg-${getTypeBadge(t.transaction_type)}">${getTypeLabel(t.transaction_type)}</span></td>
+            <td>Rs. ${formatNumber(t.charges ?? t.amount)}</td>
             <td>${t.liters ? formatNumber(t.liters) + ' L' : '-'}</td>
         </tr>
     `).join('');
 }
 
+
+function getTypeLabel(type) {
+    const labels = { Credit:'Sale', Debit:'Vasooli', Expense:'Expense', Advance:'Advance', AdvanceUsed:'Advance Used', CashSale:'Cash Sale', BankDeposit:'Bank Deposit' };
+    return labels[type] || type || '-';
+}
+
+function ensureDashboardModal() {
+    let modal = document.getElementById('dashboardSummaryModal');
+    if (modal) return modal;
+    const wrap = document.createElement('div');
+    wrap.innerHTML = `<div class="modal fade" id="dashboardSummaryModal" tabindex="-1">
+      <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+          <div class="modal-header bg-primary text-white">
+            <h5 class="modal-title" id="dashboardSummaryTitle">Today Details</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body" id="dashboardSummaryBody"></div>
+        </div>
+      </div>
+    </div>`;
+    document.body.appendChild(wrap.firstElementChild);
+    return document.getElementById('dashboardSummaryModal');
+}
+
+function showDashboardDetails(kind) {
+    const titles = { sales:'Today Sales Details', vasooli:'Today Vasooli Details', expenses:'Today Expenses Details', net:'Today Net Cash Details' };
+    let rows = dashboardTodayTransactions.slice();
+    if (kind === 'sales') rows = rows.filter(t => t.transaction_type === 'Credit' || t.transaction_type === 'CashSale');
+    else if (kind === 'vasooli') rows = rows.filter(t => t.transaction_type === 'Debit');
+    else if (kind === 'expenses') rows = rows.filter(t => t.transaction_type === 'Expense');
+    else if (kind === 'net') rows = rows.filter(t => ['Credit','CashSale','Debit','Expense'].includes(t.transaction_type));
+
+    const modal = ensureDashboardModal();
+    document.getElementById('dashboardSummaryTitle').textContent = titles[kind] || 'Today Details';
+    const body = document.getElementById('dashboardSummaryBody');
+    const total = rows.reduce((s,t)=>s+(parseFloat(t.charges ?? t.amount ?? 0)||0),0);
+    if (!rows.length) {
+        body.innerHTML = '<div class="text-center text-muted py-5"><i class="bi bi-inbox fs-1 d-block mb-2"></i>No records found today</div>';
+    } else {
+        body.innerHTML = `<div class="alert alert-light border d-flex justify-content-between flex-wrap gap-2"><strong>Records: ${rows.length}</strong><strong>Total: Rs. ${formatNumber(total)}</strong></div>
+        <div class="table-responsive"><table class="table table-sm table-hover align-middle">
+        <thead class="table-dark"><tr><th>Time</th><th>Customer</th><th>Type</th><th>Amount</th><th>Liters</th><th>Description</th></tr></thead>
+        <tbody>${rows.map(t=>`<tr><td>${new Date(t.created_at).toLocaleTimeString('en-PK',{hour:'2-digit',minute:'2-digit'})}</td><td>${t._customerName || 'N/A'} ${t._customer?.sr_no ? '(#'+t._customer.sr_no+')' : ''}</td><td><span class="badge bg-${getTypeBadge(t.transaction_type)}">${getTypeLabel(t.transaction_type)}</span></td><td class="fw-bold">Rs. ${formatNumber(t.charges ?? t.amount)}</td><td>${t.liters ? formatNumber(t.liters)+' L' : '-'}</td><td>${t.description || '-'}</td></tr>`).join('')}</tbody></table></div>`;
+    }
+    new bootstrap.Modal(modal).show();
+}
+
+function bindDashboardSummaryCards() {
+    const map = { 'dash-card-sales':'sales', 'dash-card-vasooli':'vasooli', 'dash-card-expenses':'expenses', 'dash-card-net':'net' };
+    Object.entries(map).forEach(([id,kind]) => {
+        const card = document.getElementById(id);
+        if (card && !card.dataset.bound) { card.dataset.bound = '1'; card.addEventListener('click', () => showDashboardDetails(kind)); }
+    });
+}
+
 function getTypeBadge(type) {
-    if (type === 'Credit') return 'success';
+    if (type === 'Credit' || type === 'CashSale') return 'success';
     if (type === 'Debit') return 'primary';
     if (type === 'Expense') return 'warning';
+    if (type === 'Advance' || type === 'AdvanceUsed') return 'info';
+    if (type === 'BankDeposit') return 'dark';
     return 'secondary';
 }
 

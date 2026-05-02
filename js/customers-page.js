@@ -836,6 +836,66 @@ function updateSummary() {
   set('total-advance',   'Rs. ' + fmt(advance));
   set('total-companies', companies);
 }
+function ensureSummaryModal(){
+  let modal=$('customerSummaryModal');
+  if(modal) return modal;
+  const wrap=document.createElement('div');
+  wrap.innerHTML=`<div class="modal fade" id="customerSummaryModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title" id="customerSummaryTitle">Customer Details</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body" id="customerSummaryBody"></div>
+      </div>
+    </div>
+  </div>`;
+  document.body.appendChild(wrap.firstElementChild);
+  return $('customerSummaryModal');
+}
+
+function showCustomerSummary(kind){
+  let list=getCurrentFilteredList();
+  const titleMap={all:'All Customers',udhaar:'Udhaar Customers',advance:'Advance Customers',companies:'Company Customers'};
+  if(kind==='udhaar') list=list.filter(c=>(parseFloat(c.balance)||0)>0);
+  else if(kind==='advance') list=list.filter(c=>(parseFloat(c.balance)||0)<0);
+  else if(kind==='companies') list=list.filter(c=>c.category==='Company');
+  const total=list.reduce((s,c)=>s+Math.abs(parseFloat(c.balance)||0),0);
+  const modal=ensureSummaryModal();
+  $('customerSummaryTitle').textContent=titleMap[kind]||'Customer Details';
+  const body=$('customerSummaryBody');
+  if(!list.length){
+    body.innerHTML='<div class="text-center text-muted py-5"><i class="bi bi-inbox fs-1 d-block mb-2"></i>Koi record nahi mila</div>';
+  } else {
+    body.innerHTML=`<div class="alert alert-light border d-flex justify-content-between flex-wrap gap-2">
+      <strong>Total Customers: ${list.length}</strong><strong>Total Balance: Rs. ${fmt(total)}</strong>
+    </div>
+    <div class="table-responsive"><table class="table table-sm table-hover align-middle">
+      <thead class="table-dark"><tr><th>SR#</th><th>Name</th><th>Phone</th><th>Category</th><th>Balance</th><th>Action</th></tr></thead>
+      <tbody>${list.map(c=>{
+        const bal=parseFloat(c.balance)||0;
+        const cls=bal>0?'text-danger':bal<0?'text-success':'text-muted';
+        const txt=bal>0?`Udhaar Rs. ${fmt(bal)}`:bal<0?`Advance Rs. ${fmt(Math.abs(bal))}`:'Rs. 0.00';
+        return `<tr><td><strong>#${c.sr_no||'-'}</strong></td><td>${c.name||'-'}</td><td>${c.phone||'-'}</td><td>${c.category||'-'}</td><td class="fw-bold ${cls}">${txt}</td><td><button class="btn btn-sm btn-outline-primary" onclick="window.viewLedger(${Number(c.id)})"><i class="bi bi-eye me-1"></i>Ledger</button></td></tr>`;
+      }).join('')}</tbody></table></div>`;
+  }
+  new bootstrap.Modal(modal).show();
+}
+
+function bindSummaryCards(){
+  const map={
+    'customer-card-total':'all',
+    'customer-card-udhaar':'udhaar',
+    'customer-card-advance':'advance',
+    'customer-card-companies':'companies'
+  };
+  Object.entries(map).forEach(([id,kind])=>{
+    const card=$(id);
+    if(card && !card.dataset.bound){ card.dataset.bound='1'; card.addEventListener('click',()=>showCustomerSummary(kind)); }
+  });
+}
+
 
 // ════════════════════════════════════════════
 // SEARCH / FILTER
@@ -998,6 +1058,7 @@ function bind() {
   $('search-input')?.addEventListener('input', filter);
   $('filter-category')?.addEventListener('change', filter);
   $('clear-filters')?.addEventListener('click', clearFilter);
+  bindSummaryCards();
 }
 
 // ════════════════════════════════════════════

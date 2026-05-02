@@ -243,6 +243,35 @@ BEGIN
   END IF;
 END $$;
 
+
+-- 7B) Re-apply core FKs after customers.id UNIQUE safety check
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='transactions')
+     AND EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='customers') THEN
+    BEGIN
+      ALTER TABLE public.transactions DROP CONSTRAINT IF EXISTS transactions_customer_id_fkey;
+      ALTER TABLE public.transactions
+        ADD CONSTRAINT transactions_customer_id_fkey
+        FOREIGN KEY (customer_id) REFERENCES public.customers(id) ON DELETE SET NULL;
+    EXCEPTION WHEN OTHERS THEN
+      RAISE NOTICE 'transactions FK re-apply skipped: %', SQLERRM;
+    END;
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='cash_advances')
+     AND EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='customers') THEN
+    BEGIN
+      ALTER TABLE public.cash_advances DROP CONSTRAINT IF EXISTS cash_advances_customer_id_fkey;
+      ALTER TABLE public.cash_advances
+        ADD CONSTRAINT cash_advances_customer_id_fkey
+        FOREIGN KEY (customer_id) REFERENCES public.customers(id) ON DELETE SET NULL;
+    EXCEPTION WHEN OTHERS THEN
+      RAISE NOTICE 'cash_advances FK re-apply skipped: %', SQLERRM;
+    END;
+  END IF;
+END $$;
+
 -- 8) Optional company account FK fixes if tables exist
 -- Each FK is isolated so one old table cannot stop the whole project patch.
 DO $$
