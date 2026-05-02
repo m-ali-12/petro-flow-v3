@@ -15,6 +15,43 @@
   const fmt = n => Number(n||0).toLocaleString('en-PK',{minimumFractionDigits:2,maximumFractionDigits:2});
   const today = () => new Date().toISOString().slice(0,10);
 
+
+  async function getOwnerCustomerId() {
+    try {
+      const { data } = await sb().from('customers').select('id').eq('category','Owner').maybeSingle();
+      if (data?.id) return data.id;
+      const { data: created, error } = await sb().from('customers')
+        .insert([{ sr_no: 0, name: 'Owner / Cash', category: 'Owner', balance: 0 }])
+        .select('id').single();
+      if (error) throw error;
+      return created?.id || null;
+    } catch (e) {
+      console.warn('Owner account not available for bank deposit transaction:', e.message);
+      return null;
+    }
+  }
+
+  function missingColumn(message){
+    const m = String(message || '').match(/'([^']+)' column|column ['"]?([a-zA-Z0-9_]+)['"]?/i);
+    return m ? (m[1] || m[2]) : null;
+  }
+
+  async function safeInsertBankDepositTransaction(payload) {
+    let row = { ...payload };
+    const removable = ['cash_deposit_id','reference_no','payment_mode','balance_before','balance_after','entry_method'];
+    for (let i=0; i<8; i++) {
+      const { error } = await sb().from('transactions').insert([row]);
+      if (!error) return true;
+      const col = missingColumn(error.message || error.details || '');
+      if (col && Object.prototype.hasOwnProperty.call(row, col)) { delete row[col]; continue; }
+      const rm = removable.find(k => Object.prototype.hasOwnProperty.call(row,k));
+      if (rm && /schema cache|column/i.test(error.message || error.details || '')) { delete row[rm]; continue; }
+      console.warn('Bank deposit transaction insert skipped:', error.message);
+      return false;
+    }
+    return false;
+  }
+
   // ── Bootstrap modal helpers ──────────────────────────────────
   let _depositModal, _bankModal;
   function depositModal() { return _depositModal || (_depositModal = new bootstrap.Modal(document.getElementById('depositModal'))); }
@@ -339,14 +376,36 @@
       created_by:   window.currentUser?.id || null
     };
 
-    let error;
+    let error, savedDeposit = null;
     if (id) {
       ({ error } = await sb().from('cash_deposits').update(row).eq('id', id));
+      savedDeposit = { ...row, id };
     } else {
       row.created_at = new Date().toISOString();
-      ({ error } = await sb().from('cash_deposits').insert(row));
+      const res = await sb().from('cash_deposits').insert(row).select().single();
+      error = res.error;
+      savedDeposit = res.data;
     }
     if (error) { toast('Error saving deposit: ' + error.message, 'danger'); return; }
+
+    // New deposit ko transaction history mein bhi record karo, taake daily sale → next-day bank deposit manage ho sake.
+    if (!id && savedDeposit) {
+      const bank = allBanks.find(b => String(b.id) === String(bankId));
+      const ownerId = await getOwnerCustomerId();
+      await safeInsertBankDepositTransaction({
+        customer_id: ownerId,
+        transaction_type: 'BankDeposit',
+        amount: amount,
+        charges: amount,
+        cash_deposit_id: savedDeposit.id,
+        reference_no: ref || null,
+        payment_mode: bank?.name || 'Bank',
+        entry_method: 'bank_deposit',
+        description: `Bank Deposit to ${bank?.name || 'Bank'}${ref ? ' | Ref: '+ref : ''}${note ? ' | '+note : ''}`,
+        created_at: new Date(date + 'T12:00:00').toISOString()
+      });
+    }
+
     depositModal().hide();
     toast('✅ Deposit saved!', 'success');
     await loadDeposits();

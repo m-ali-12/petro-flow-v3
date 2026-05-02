@@ -282,7 +282,7 @@
 //   function updateCards(txns){
 //     let cr=0,db=0,ex=0,adv=0,crc=0,dbc=0,exc=0;
 //     txns.forEach(t=>{
-//       const a=parseFloat(t.charges)||0;
+//       const a=txAmount(t);
 //       if(t.transaction_type==='Credit'){cr+=a;crc++;}
 //       else if(t.transaction_type==='Debit'){db+=a;dbc++;}
 //       else if(t.transaction_type==='Expense'){ex+=a;exc++;}
@@ -2086,6 +2086,80 @@
   function el(id) { return document.getElementById(id); }
   function fmt(n) { return Number(n||0).toLocaleString('en-PK',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
+
+  function txAmount(t){ return parseFloat(t.charges ?? t.amount ?? 0) || 0; }
+  function customerById(id){ return allCustomers.find(c => String(c.id) === String(id)); }
+  function attachCustomers(rows){
+    return (rows || []).map(t => ({ ...t, customers: customerById(t.customer_id) || t.customers || null }));
+  }
+  async function refreshCustomersIfNeeded(rows){
+    const ids = [...new Set((rows || []).map(r => r.customer_id).filter(Boolean).map(String))];
+    const missing = ids.filter(id => !customerById(id));
+    if(!missing.length) return;
+    try{
+      const {data, error} = await supabase.from('customers').select('id,sr_no,name,phone,balance,category').in('id', missing);
+      if(!error && Array.isArray(data)){
+        data.forEach(c => { if(!customerById(c.id)) allCustomers.push(c); });
+      }
+    }catch(e){ console.warn('Customer cache refresh skipped:', e.message); }
+  }
+  function cleanInsertPayload(payload, missingColumn){
+    const p = { ...payload };
+    if(missingColumn && Object.prototype.hasOwnProperty.call(p, missingColumn)) delete p[missingColumn];
+    return p;
+  }
+  function findMissingColumn(message){
+    const m = String(message || '').match(/'([^']+)' column|column ['"]?([a-zA-Z0-9_]+)['"]?/i);
+    return m ? (m[1] || m[2]) : null;
+  }
+  async function safeInsertTransaction(payload){
+    let p = { ...payload };
+    const val = txAmount(p);
+    p.amount = parseFloat(p.amount ?? val) || 0;
+    p.charges = parseFloat(p.charges ?? val) || 0;
+    const removable = ['balance_before','balance_after','customer_balance_before','customer_balance_after','balance_effect','payment_status','cash_deposit_id','expense_type','expense_account','fuel_type','payment_method','payment_mode','month','payment_month','entry_method','reference_no','cash_advance_id'];
+    for(let i=0;i<10;i++){
+      const {data,error}=await supabase.from('transactions').insert([p]).select().single();
+      if(!error) return data;
+      const col = findMissingColumn(error.message || error.details || '');
+      if(col && Object.prototype.hasOwnProperty.call(p,col)){
+        console.warn('transactions insert retry without missing column:', col);
+        delete p[col];
+        continue;
+      }
+      const rm = removable.find(k => Object.prototype.hasOwnProperty.call(p,k));
+      if(rm && /schema cache|column|could not find/i.test(error.message || error.details || '')){
+        console.warn('transactions insert retry without optional column:', rm);
+        delete p[rm];
+        continue;
+      }
+      throw error;
+    }
+    const {data,error}=await supabase.from('transactions').insert([p]).select().single();
+    if(error) throw error;
+    return data;
+  }
+  function balanceNote(before, movement, after){
+    return ` | Balance: Rs.${fmt(before)} → Rs.${fmt(after)} (Change Rs.${fmt(movement)})`;
+  }
+  async function reduceTankForSale(fuelType, liters){
+    if(!fuelType || !liters || liters <= 0) return;
+    try{
+      const companyId = window.currentUserProfile?.company_id || null;
+      let query = supabase.from('tanks').select('id,current_stock,company_id').eq('fuel_type', fuelType);
+      if(companyId) query = query.eq('company_id', companyId);
+      let {data: tank, error} = await query.maybeSingle();
+      if(error && /company_id|schema cache|column/i.test(error.message || '')){
+        ({data: tank, error} = await supabase.from('tanks').select('id,current_stock').eq('fuel_type', fuelType).maybeSingle());
+      }
+      if(error) throw error;
+      if(!tank){ console.warn('Tank not found for sale stock deduction:', fuelType); return; }
+      const newStock = Math.max(0, (parseFloat(tank.current_stock)||0) - parseFloat(liters));
+      const {error:updateError}=await supabase.from('tanks').update({current_stock:newStock,last_updated:new Date().toISOString()}).eq('id', tank.id);
+      if(updateError) console.warn('Tank stock deduction failed:', updateError.message);
+    }catch(e){ console.warn('Stock deduction skipped:', e.message); }
+  }
+
   function showToast(type, title, msg) {
     const t = el('liveToast');
     if(!t) { alert(title+': '+msg); return; }
@@ -2297,12 +2371,13 @@
     try {
       const {data,error}=await supabase
         .from('transactions')
-        .select('*, customers(name, sr_no)')
+        .select('*')
         .order('id',{ascending:false})
         .limit(500);
       if(error) throw error;
+      await refreshCustomersIfNeeded(data || []);
       const seen=new Set();
-      allTransactions=(data||[]).filter(t=>{ if(seen.has(t.id))return false; seen.add(t.id); return true; });
+      allTransactions=attachCustomers(data || []).filter(t=>{ if(seen.has(t.id))return false; seen.add(t.id); return true; });
       selectedIds.clear();
       applyFilters();
     } catch(e){
@@ -2318,7 +2393,7 @@
   function updateCards(txns){
     let cr=0,db=0,ex=0,adv=0,crc=0,dbc=0,exc=0,advc=0;
     txns.forEach(t=>{
-      const a=parseFloat(t.charges)||0;
+      const a=txAmount(t);
       if(t.transaction_type==='Credit'){cr+=a;crc++;}
       else if(t.transaction_type==='Debit'){db+=a;dbc++;}
       else if(t.transaction_type==='Expense'){ex+=a;exc++;}
@@ -2401,9 +2476,10 @@
       'Credit': 'background:#198754;color:#fff;',
       'Debit':  'background:#0d6efd;color:#fff;',
       'Advance':'background:#6f42c1;color:#fff;',
-      'Expense':'background:#ffc107;color:#212529;'
+      'Expense':'background:#ffc107;color:#212529;',
+      'BankDeposit':'background:#0f766e;color:#fff;'
     };
-    const typeLabels={Credit:'Sale',Debit:'Vasooli',Advance:'Advance',Expense:'Expense'};
+    const typeLabels={Credit:'Sale',Debit:'Vasooli',Advance:'Advance',Expense:'Expense',BankDeposit:'Bank Deposit'};
 
     tbody.innerHTML=txns.map(t=>{
       const d = t.created_at ? new Date(t.created_at) : null;
@@ -2426,7 +2502,7 @@
         <td style="vertical-align:middle;">${fuelType}</td>
         <td style="vertical-align:middle;">${t.liters>0?fmt(t.liters)+' L':'-'}</td>
         <td style="vertical-align:middle;">${t.unit_price>0?'Rs.'+fmt(t.unit_price):'-'}</td>
-        <td style="vertical-align:middle;"><strong>Rs.${fmt(t.charges)}</strong></td>
+        <td style="vertical-align:middle;"><strong>Rs.${fmt(txAmount(t))}</strong></td>
         <td style="vertical-align:middle;max-width:200px;word-break:break-word;font-size:12px;">${desc||'-'}</td>
         <td style="vertical-align:middle;white-space:nowrap;">
           <div style="display:flex;gap:3px;">
@@ -2514,7 +2590,7 @@
     const company='Khalid & Sons Petroleum';
     const pDate=new Date().toLocaleDateString('en-PK',{day:'2-digit',month:'long',year:'numeric'});
     let totCr=0,totDb=0,totEx=0,totAdv=0;
-    txns.forEach(t=>{ const a=parseFloat(t.charges)||0;
+    txns.forEach(t=>{ const a=txAmount(t);
       if(t.transaction_type==='Credit')totCr+=a;
       else if(t.transaction_type==='Debit')totDb+=a;
       else if(t.transaction_type==='Advance')totAdv+=a;
@@ -2531,9 +2607,9 @@
           <td style="color:${tc[t.transaction_type]||'#555'};font-weight:700">${t.transaction_type}</td>
           <td>${fuel}</td>
           <td style="text-align:right">${t.liters>0?fmt(t.liters)+' L':'-'}</td>
-          <td style="text-align:right;font-weight:700">Rs.${fmt(t.charges)}</td>
-          <td style="text-align:right;color:#198754">${t.transaction_type==='Credit'?'Rs.'+fmt(t.charges):'-'}</td>
-          <td style="text-align:right;color:#0d6efd">${t.transaction_type!=='Credit'?'Rs.'+fmt(t.charges):'-'}</td>
+          <td style="text-align:right;font-weight:700">Rs.${fmt(txAmount(t))}</td>
+          <td style="text-align:right;color:#198754">${t.transaction_type==='Credit'?'Rs.'+fmt(txAmount(t)):'-'}</td>
+          <td style="text-align:right;color:#0d6efd">${t.transaction_type!=='Credit'?'Rs.'+fmt(txAmount(t)):'-'}</td>
           <td style="word-break:break-word;max-width:130px;font-size:10px">${desc}</td>
         </tr>`;
       }).join('');
@@ -2556,7 +2632,7 @@
         const key=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
         const lbl=d.toLocaleDateString('en-PK',{month:'long',year:'numeric'});
         if(!map[key])map[key]={lbl,list:[],cr:0,db:0,ex:0,adv:0};
-        map[key].list.push(t); const a=parseFloat(t.charges)||0;
+        map[key].list.push(t); const a=txAmount(t);
         if(t.transaction_type==='Credit')map[key].cr+=a;
         else if(t.transaction_type==='Debit')map[key].db+=a;
         else if(t.transaction_type==='Advance')map[key].adv+=a;
@@ -2624,25 +2700,33 @@ ${bodyHtml}
     if(!amount){ alert('Amount enter karein'); return; }
     if(!saleDate){ alert('Taareekh (date) enter karein'); return; }
     try{
+      const oldBal=parseFloat(cust.balance)||0;
+      const usesAdvance = oldBal < 0;
+      const affectsCustomerBalance = paymentType !== 'cash' || usesAdvance;
       const txType=paymentType==='cash'?'Debit':'Credit';
-      // Build ISO timestamp from selected date (use noon time so it doesn't shift by timezone)
       const createdAt = new Date(saleDate + 'T12:00:00').toISOString();
-      const{error}=await supabase.from('transactions').insert([{
+      const newBal = affectsCustomerBalance ? oldBal + amount : oldBal;
+      const descExtra = usesAdvance ? ' | Advance adjusted automatically' : '';
+      await safeInsertTransaction({
         customer_id:parseInt(cust.id), transaction_type:txType,
-        charges:amount, liters:liters||null, unit_price:unitPrice||null,
-        fuel_type:fuelType,
-        description:`${fuelType} sale${description?' - '+description:''}`,
+        amount, charges:amount, liters:liters||null, unit_price:unitPrice||null,
+        fuel_type:fuelType, payment_mode: paymentType === 'cash' ? 'Cash' : 'Credit',
+        balance_before: oldBal, balance_after: newBal,
+        customer_balance_before: oldBal, customer_balance_after: newBal,
+        balance_effect: affectsCustomerBalance ? amount : 0,
+        description:`${fuelType} sale${description?' - '+description:''}${descExtra}${affectsCustomerBalance?balanceNote(oldBal, amount, newBal):''}`,
         created_at: createdAt
-      }]);
-      if(error) throw error;
-      if(txType==='Credit'){
-        const newBal=(parseFloat(cust.balance)||0)+amount;
+      });
+      if(affectsCustomerBalance){
         await supabase.from('customers').update({balance:newBal}).eq('id',cust.id);
         const lc=allCustomers.find(c=>c.id==cust.id); if(lc) lc.balance=newBal;
       }
+      await reduceTankForSale(fuelType, liters);
       const dateLabel = saleDate === new Date().toISOString().split('T')[0] ? '' : ` (${saleDate})`;
-      showToast('success','Kamyab!',`${fuelType} Sale Rs.${fmt(amount)} record ho gayi!${dateLabel}`);
+      const advLabel = usesAdvance ? ` Advance se adjust, new balance Rs.${fmt(newBal)}` : '';
+      showToast('success','Kamyab!',`${fuelType} Sale Rs.${fmt(amount)} record ho gayi!${dateLabel}${advLabel}`);
       closeModal('newSaleModal'); selectedCustomers.sale=null;
+      await loadCustomers();
       await loadTransactions();
     }catch(e){ alert('Sale Error: '+e.message); }
   }
@@ -2661,17 +2745,23 @@ ${bodyHtml}
     if(fuelCat) fullDesc+=` (${fuelCat})`;
     if(desc) fullDesc+=` - ${desc}`;
     try{
+      const oldBal=parseFloat(cust.balance)||0;
+      const newBal = oldBal - amount;
       const createdAt = new Date(vasooliDate + 'T12:00:00').toISOString();
-      const{error}=await supabase.from('transactions').insert([{
-        customer_id:parseInt(cust.id), transaction_type:'Debit', charges:amount,
-        description:fullDesc, created_at: createdAt
-      }]);
-      if(error) throw error;
-      const newBal = (parseFloat(cust.balance)||0) - amount;
+      const statusText = newBal > 0 ? `Remaining Baqi Rs.${fmt(newBal)}` : newBal < 0 ? `Advance Rs.${fmt(Math.abs(newBal))}` : 'Account Clear';
+      await safeInsertTransaction({
+        customer_id:parseInt(cust.id), transaction_type:'Debit', amount, charges:amount,
+        balance_before: oldBal, balance_after: newBal,
+        customer_balance_before: oldBal, customer_balance_after: newBal,
+        balance_effect: -amount,
+        description:`${fullDesc}${balanceNote(oldBal, -amount, newBal)} | ${statusText}`,
+        created_at: createdAt
+      });
       await supabase.from('customers').update({balance:newBal}).eq('id',cust.id);
       const lc=allCustomers.find(c=>c.id==cust.id); if(lc) lc.balance=newBal;
-      showToast('success','Kamyab!',`Vasooli Rs.${fmt(amount)} record ho gayi!`);
+      showToast('success','Kamyab!',`Vasooli Rs.${fmt(amount)} record ho gayi! ${statusText}`);
       closeModal('vasooliModal'); selectedCustomers.vasooli=null;
+      await loadCustomers();
       await loadTransactions();
     }catch(e){ alert('Vasooli Error: '+e.message); }
   }
@@ -2703,13 +2793,12 @@ ${bodyHtml}
         }
       }
       const createdAt = new Date(expDate + 'T12:00:00').toISOString();
-      const{error}=await supabase.from('transactions').insert([{
-        customer_id:custId, transaction_type:'Expense', charges:amount,
+      await safeInsertTransaction({
+        customer_id:custId, transaction_type:'Expense', amount, charges:amount,
         expense_type:expType, expense_account:account,
         description:`${expType}: ${description} (From: ${account})`,
         created_at: createdAt
-      }]);
-      if(error) throw error;
+      });
       showToast('success','Kamyab!','Expense record ho gaya!');
       closeModal('expenseModal'); selectedCustomers.expense=null;
       await loadTransactions();
@@ -2738,15 +2827,18 @@ ${bodyHtml}
       const{data:advData,error:advErr}=await supabase.from('cash_advances').insert([advObj]).select().single();
       if(!advErr){ advId=advData.id; }
 
-      const txObj={customer_id:parseInt(cust.id),transaction_type:'Advance',charges:amount,
-        description:`Cash Advance: ${reason}${notes?' | '+notes:''}`};
+      const oldBal=(parseFloat(cust.balance)||0);
+      const newBal=oldBal+amount;
+      const txObj={customer_id:parseInt(cust.id),transaction_type:'Advance',amount,charges:amount,
+        balance_before: oldBal, balance_after: newBal,
+        customer_balance_before: oldBal, customer_balance_after: newBal,
+        balance_effect: amount,
+        description:`Cash Advance: ${reason}${notes?' | '+notes:''}${balanceNote(oldBal, amount, newBal)}`};
       if(userId) txObj.user_id=userId;
       if(advId) txObj.cash_advance_id=advId;
 
-      const{error:txErr}=await supabase.from('transactions').insert([txObj]);
-      if(txErr) throw txErr;
+      await safeInsertTransaction(txObj);
 
-      const newBal=(parseFloat(cust.balance)||0)+amount;
       await supabase.from('customers').update({balance:newBal}).eq('id',cust.id);
       const lc=allCustomers.find(c=>c.id==cust.id); if(lc) lc.balance=newBal;
 
@@ -2824,12 +2916,13 @@ ${adv.notes?`<div class="row"><span class="lbl">Notes</span><span class="val">${
     try{
       const statusFilter=el('advance-filter-status')?.value||'';
       let query=supabase.from('cash_advances')
-        .select('*, customers(name,sr_no,phone,balance)')
+        .select('*')
         .order('advance_date',{ascending:false});
       if(statusFilter) query=query.eq('status',statusFilter);
       const{data,error}=await query;
       if(error) throw error;
-      const advances=data||[];
+      await refreshCustomersIfNeeded(data || []);
+      const advances=attachCustomers(data || []);
       const countEl=el('advance-list-count'); if(countEl) countEl.textContent=advances.length+' advances';
       if(!advances.length){
         tbody.innerHTML='<tr><td colspan="8" class="text-center py-4 text-muted"><i class="bi bi-inbox fs-4 d-block mb-2"></i>Koi cash advance nahi</td></tr>';
@@ -2849,23 +2942,28 @@ ${adv.notes?`<div class="row"><span class="lbl">Notes</span><span class="val">${
           <td style="padding:10px 12px;"><strong>${a.customers?.name||'N/A'}</strong><br><small style="color:#888;">#${a.customers?.sr_no||'-'} | ${a.customers?.phone||'-'}</small></td>
           <td style="padding:10px 12px;">${a.advance_date?new Date(a.advance_date).toLocaleDateString('en-PK'):'—'}</td>
           <td style="padding:10px 12px;font-weight:700;color:#6f42c1;font-size:15px;">Rs.${fmt(amt)}</td>
-          <td style="padding:10px 12px;">${a.reason||'-'}${a.notes?`<br><small style="color:#888">${a.notes}</small>`:''}</td>
-          <td style="padding:10px 12px;"><span style="font-weight:700;color:${custBal>0?'#dc3545':'#198754'};">Rs.${fmt(Math.abs(custBal))}</span><br><small style="color:${custBal>0?'#dc3545':'#198754'};">${custBal>0?'Baqi':'Saaf'}</small></td>
-          <td style="padding:10px 12px;">${sMap[a.status]||a.status}</td>
+          <td style="padding:10px 12px;">${a.reason||a.description||'-'}${a.notes?`<br><small style="color:#888">${a.notes}</small>`:''}</td>
+          <td style="padding:10px 12px;"><span style="font-weight:700;color:${custBal>0?'#dc3545':'#198754'};">Rs.${fmt(Math.abs(custBal))}</span><br><small style="color:${custBal>0?'#dc3545':'#198754'};">${custBal>0?'Baqi':(custBal<0?'Advance':'Saaf')}</small></td>
+          <td style="padding:10px 12px;">${sMap[a.status]||a.status||'pending'}</td>
           <td style="padding:10px 12px;"><div style="display:flex;gap:4px;flex-wrap:wrap;">
             <button onclick="window.printAdvListItem(${a.id})" style="background:#6f42c1;color:#fff;border:none;border-radius:5px;padding:4px 9px;cursor:pointer;font-size:12px;"><i class="bi bi-printer"></i> Parchi</button>
             ${a.status!=='cleared'?`<button onclick="window.markAdvanceCleared(${a.id})" style="background:#198754;color:#fff;border:none;border-radius:5px;padding:4px 9px;cursor:pointer;font-size:12px;"><i class="bi bi-check2"></i> Clear</button>`:''}
           </div></td></tr>`;
       }).join('');
       if(el('advance-list-tfoot')) el('advance-list-tfoot').innerHTML=`<tr style="background:#f3eeff;font-weight:800;"><td colspan="3" style="padding:10px 12px;text-align:right;color:#6f42c1;">TOTAL:</td><td style="padding:10px 12px;color:#6f42c1;font-size:16px;">Rs.${fmt(totalAdv)}</td><td colspan="4"></td></tr>`;
-    }catch(e){ console.error('loadAdvanceList:',e); }
+    }catch(e){
+      console.error('loadAdvanceList:',e);
+      tbody.innerHTML=`<tr><td colspan="8" class="text-center py-3 text-danger">Error: ${e.message}</td></tr>`;
+    }
   }
 
   window.printAdvListItem=async function(advId){
     try{
-      const{data,error}=await supabase.from('cash_advances').select('*, customers(name,sr_no,phone,balance)').eq('id',advId).single();
+      const{data,error}=await supabase.from('cash_advances').select('*').eq('id',advId).single();
       if(error) throw error;
-      printAdvanceReceipt({...data,customer:data.customers,newBalance:data.customers?.balance||0});
+      await refreshCustomersIfNeeded([data]);
+      const row=attachCustomers([data])[0];
+      printAdvanceReceipt({...row,customer:row.customers,newBalance:row.customers?.balance||0});
     }catch(e){ alert('Error: '+e.message); }
   };
 
@@ -3018,4 +3116,4 @@ ${adv.notes?`<div class="row"><span class="lbl">Notes</span><span class="val">${
   }
 
   window.loadInitialTransactions=loadTransactions;
-})();
+})();

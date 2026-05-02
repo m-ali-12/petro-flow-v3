@@ -73,15 +73,56 @@ function setText(id, val) {
     if (el) el.textContent = val;
 }
 
+
+function companyId() { return window.currentUserProfile?.company_id || null; }
+
+async function selectTankByFuel(fuelType) {
+    const cid = companyId();
+    try {
+        let q = window.supabaseClient.from('tanks').select('*').eq('fuel_type', fuelType);
+        if (cid) q = q.eq('company_id', cid);
+        const { data, error } = await q.maybeSingle();
+        if (error) throw error;
+        return data || null;
+    } catch (e) {
+        if (/company_id|schema cache|column/i.test(e.message || '')) {
+            const { data, error } = await window.supabaseClient
+                .from('tanks').select('*').eq('fuel_type', fuelType).maybeSingle();
+            if (error) throw error;
+            return data || null;
+        }
+        throw e;
+    }
+}
+
+async function insertStockEntryCompat(payload, legacyPayload) {
+    const attempts = [payload, legacyPayload];
+    let lastError = null;
+    for (const row of attempts) {
+        const { data, error } = await window.supabaseClient
+            .from('stock_entries')
+            .insert([row])
+            .select()
+            .single();
+        if (!error) return data;
+        lastError = error;
+        console.warn('stock_entries insert retry:', error.message);
+    }
+    throw lastError;
+}
+
 // =============================================
 // Load Current Tank Stock
 // =============================================
 async function loadCurrentStock() {
     try {
-        const { data, error } = await window.supabaseClient
-            .from('tanks')
-            .select('*');
-
+        const cid = companyId();
+        let query = window.supabaseClient.from('tanks').select('*');
+        if (cid) query = query.eq('company_id', cid);
+        let { data, error } = await query;
+        if (error && /company_id|schema cache|column/i.test(error.message || '')) {
+            ({ data, error } = await window.supabaseClient.from('tanks').select('*'));
+        }
         if (error) { console.error('Tank load error:', error); return; }
 
         const petrol = data?.find(t => t.fuel_type === 'Petrol') || { current_stock: 0, capacity: 25000 };
@@ -154,34 +195,19 @@ async function submitStock() {
             purchase_date:   purchaseDate
         };
 
-        const { data: d1, error: e1 } = await window.supabaseClient
-            .from('stock_entries')
-            .insert([fullPayload])
-            .select()
-            .single();
-
-        if (e1) {
-            console.warn('Full insert failed, trying core only:', e1.message);
-            // Core columns only (always exist)
-            const { data: d2, error: e2 } = await window.supabaseClient
-                .from('stock_entries')
-                .insert([{
-                    invoice_number:  genInvoice,
-                    fuel_type:       fuelType,
-                    liters:          liters,
-                    price_per_liter: rate,
-                    total_amount:    totalAmount,
-                    supplier_name:   supplier || null,
-                    truck_number:    truck    || null,
-                    notes:           notes    || null
-                }])
-                .select()
-                .single();
-            if (e2) throw e2;
-            entry = d2;
-        } else {
-            entry = d1;
-        }
+        const legacyPayload = {
+            fuel_type:  fuelType,
+            entry_type: 'purchase',
+            liters:     liters,
+            unit_price: rate,
+            total_cost: totalAmount,
+            charges:    charges || 0,
+            invoice_no: genInvoice,
+            truck_no:   truck || null,
+            entry_date: purchaseDate,
+            notes:      [supplier ? `Supplier: ${supplier}` : '', notes || ''].filter(Boolean).join(' | ') || null
+        };
+        entry = await insertStockEntryCompat(fullPayload, legacyPayload);
 
         // Update tank stock
         await updateTankStock(fuelType, liters, 'add');
@@ -216,33 +242,38 @@ async function submitStock() {
 }
 
 async function updateTankStock(fuelType, liters, action = 'add') {
-    const profile = window.currentUserProfile;
-    if (!profile || !profile.company_id) {
-        console.error('No company ID found for stock update');
+    const qty = parseFloat(liters) || 0;
+    if (!fuelType || qty <= 0) return;
+
+    const cid = companyId();
+    const tank = await selectTankByFuel(fuelType);
+    const cur = parseFloat(tank?.current_stock || 0);
+    const newStock = action === 'add' ? cur + qty : Math.max(0, cur - qty);
+
+    if (tank?.id) {
+        const { error } = await window.supabaseClient
+            .from('tanks')
+            .update({ current_stock: newStock, last_updated: new Date().toISOString() })
+            .eq('id', tank.id);
+        if (error) throw error;
         return;
     }
 
-    const { data: tank } = await window.supabaseClient
-        .from('tanks')
-        .select('current_stock')
-        .eq('fuel_type', fuelType)
-        .eq('company_id', profile.company_id)
-        .maybeSingle();
+    const insertRow = {
+        fuel_type: fuelType,
+        current_stock: newStock,
+        capacity: 25000,
+        last_updated: new Date().toISOString(),
+        name: `${fuelType} Tank`
+    };
+    if (cid) insertRow.company_id = cid;
 
-    const cur = parseFloat(tank?.current_stock || 0);
-    const newStock = action === 'add'
-        ? cur + parseFloat(liters)
-        : Math.max(0, cur - parseFloat(liters));
-
-    await window.supabaseClient
-        .from('tanks')
-        .upsert({ 
-            fuel_type: fuelType, 
-            current_stock: newStock, 
-            last_updated: new Date().toISOString(),
-            company_id: profile.company_id,
-            name: `${fuelType} Tank`
-        }, { onConflict: 'company_id,fuel_type' });
+    let { error } = await window.supabaseClient.from('tanks').insert([insertRow]);
+    if (error && /company_id|schema cache|column/i.test(error.message || '')) {
+        delete insertRow.company_id;
+        ({ error } = await window.supabaseClient.from('tanks').insert([insertRow]));
+    }
+    if (error) throw error;
 }
 
 // =============================================
@@ -448,14 +479,8 @@ async function saveEdit() {
         if (origFuel === fuelType) {
             // Same fuel: adjust difference
             const diff = liters - origLiters;
-            if (diff !== 0) {
-                const { data: tank } = await window.supabaseClient
-                    .from('tanks').select('current_stock').eq('fuel_type', fuelType).single();
-                const newStock = Math.max(0, parseFloat(tank?.current_stock||0) + diff);
-                await window.supabaseClient.from('tanks')
-                    .update({ current_stock: newStock, last_updated: new Date().toISOString() })
-                    .eq('fuel_type', fuelType);
-            }
+            if (diff > 0) await updateTankStock(fuelType, diff, 'add');
+            if (diff < 0) await updateTankStock(fuelType, Math.abs(diff), 'subtract');
         } else {
             // Fuel changed: deduct from old, add to new
             await updateTankStock(origFuel, origLiters, 'subtract');
