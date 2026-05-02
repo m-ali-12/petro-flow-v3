@@ -30,6 +30,15 @@ ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS company_name TEXT;
 ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS is_company BOOLEAN DEFAULT false;
 ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS account_type TEXT DEFAULT 'regular';
 ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS credit_limit NUMERIC(14,2) DEFAULT 0;
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS initial_opening_date DATE;
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS initial_closing_date DATE;
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS initial_posting_date DATE;
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS initial_document_date DATE;
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS initial_document_no TEXT;
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS initial_reference_no TEXT;
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS initial_doc_type TEXT DEFAULT 'OP';
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS initial_description TEXT;
+
 ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS initial_credit NUMERIC(14,2) DEFAULT 0;
 ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS is_expense_also BOOLEAN DEFAULT false;
 ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
@@ -275,6 +284,19 @@ SET stock_value = COALESCE(stock_value, 0) + CASE WHEN COALESCE(stock_value, 0) 
 -- ---------------------------------------------------------------
 -- Indexes
 -- ---------------------------------------------------------------
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='company_transactions') THEN
+    ALTER TABLE public.company_transactions ADD COLUMN IF NOT EXISTS document_no TEXT;
+    ALTER TABLE public.company_transactions ADD COLUMN IF NOT EXISTS posting_date DATE;
+    ALTER TABLE public.company_transactions ADD COLUMN IF NOT EXISTS document_date DATE;
+    ALTER TABLE public.company_transactions ADD COLUMN IF NOT EXISTS opening_date DATE;
+    ALTER TABLE public.company_transactions ADD COLUMN IF NOT EXISTS closing_date DATE;
+    ALTER TABLE public.company_transactions ADD COLUMN IF NOT EXISTS doc_type TEXT;
+  END IF;
+END $$;
+
 CREATE INDEX IF NOT EXISTS idx_company_txn_b2b ON public.company_transactions(b2b_company_id);
 CREATE INDEX IF NOT EXISTS idx_company_txn_tenant ON public.company_transactions(company_id);
 CREATE INDEX IF NOT EXISTS idx_company_txn_date ON public.company_transactions(txn_date DESC);

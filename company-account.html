@@ -313,13 +313,49 @@
               Yeh GO Company Account No. 10 ka opening credit aur credit limit set karega. Existing sales/repayment entries delete ya change nahi hongi.
             </div>
             <div class="row g-3">
-              <div class="col-12">
+              <div class="col-md-6">
+                <label class="form-label">Opening Date *</label>
+                <input type="date" class="form-control" id="ic-opening-date" required>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Closing Date</label>
+                <input type="date" class="form-control" id="ic-closing-date">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Posting Date *</label>
+                <input type="date" class="form-control" id="ic-posting-date" required>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Document Date *</label>
+                <input type="date" class="form-control" id="ic-document-date" required>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Document No.</label>
+                <input type="text" class="form-control" id="ic-document-no" placeholder="e.g. OPEN-2026">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Reference</label>
+                <input type="text" class="form-control" id="ic-reference" placeholder="e.g. GO statement ref">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Doc Type</label>
+                <select class="form-select" id="ic-doc-type">
+                  <option value="OP">OP - Opening</option>
+                  <option value="DZ">DZ - Deposit</option>
+                  <option value="JV">JV - Adjustment</option>
+                </select>
+              </div>
+              <div class="col-md-6">
                 <label class="form-label">Initial Credit / Opening Balance (Rs.) *</label>
                 <input type="number" class="form-control" id="ic-current-credit" placeholder="0.00" step="0.01" min="0" required>
               </div>
-              <div class="col-12">
+              <div class="col-md-6">
                 <label class="form-label">Credit Limit (Rs.)</label>
                 <input type="number" class="form-control" id="ic-credit-limit" placeholder="0.00" step="0.01" min="0">
+              </div>
+              <div class="col-12">
+                <label class="form-label">Description</label>
+                <input type="text" class="form-control" id="ic-description" placeholder="e.g. Opening / Initial Credit from GO Company">
               </div>
               <div class="col-12">
                 <label class="form-label">Notes</label>

@@ -178,10 +178,11 @@
                     <th style="padding:10px 12px;text-align:right;">Debit (Udhaar)</th>
                     <th style="padding:10px 12px;text-align:right;">Credit (Jama)</th>
                     <th style="padding:10px 12px;text-align:right;">Balance</th>
+                    <th class="no-print" style="padding:10px 12px;text-align:center;">Actions</th>
                   </tr>
                 </thead>
                 <tbody id="tx-detail-tbody">
-                  <tr><td colspan="7" class="text-center py-3 text-muted">—</td></tr>
+                  <tr><td colspan="8" class="text-center py-3 text-muted">—</td></tr>
                 </tbody>
               </table>
             </div>
@@ -334,7 +335,7 @@
               </tr>
             </thead>
             <tbody id="bulk-balance-tbody">
-              <tr><td colspan="5" class="text-center text-muted py-2">Loading customers...</td></tr>
+              <tr><td colspan="6" class="text-center text-muted py-2">Loading customers...</td></tr>
             </tbody>
           </table>
         </div>
@@ -657,6 +658,10 @@
           <td style="padding:8px 12px;text-align:right;font-weight:700;color:#198754;">${debit>0?'Rs.'+fmt(debit):'—'}</td>
           <td style="padding:8px 12px;text-align:right;font-weight:700;color:#0d6efd;">${credit>0?'Rs.'+fmt(credit):'—'}</td>
           <td style="padding:8px 12px;text-align:right;font-weight:800;color:${runningBal>0?'#dc3545':'#198754'};">Rs.${fmt(Math.abs(runningBal))}</td>
+          <td class="no-print" style="padding:8px 12px;text-align:center;white-space:nowrap;">
+            <button class="btn btn-sm btn-outline-primary me-1" onclick="editKhataTransaction(${Number(t.id)})" title="Edit / Update"><i class="bi bi-pencil"></i></button>
+            <button class="btn btn-sm btn-outline-danger" onclick="deleteKhataTransaction(${Number(t.id)})" title="Delete / Undo"><i class="bi bi-trash"></i></button>
+          </td>
         </tr>`
       };
     });
@@ -668,7 +673,7 @@
     if(mFilter) filteredRows = rows.filter(r => r.key === mFilter);
 
     if(!filteredRows.length){
-      tbody.innerHTML='<tr><td colspan="7" class="text-center text-muted py-3">Koi transaction nahi</td></tr>';
+      tbody.innerHTML='<tr><td colspan="8" class="text-center text-muted py-3">Koi transaction nahi</td></tr>';
       return;
     }
 
@@ -690,6 +695,94 @@
       showToast('success','Done!',`${c.name} ka balance Rs.${fmt(nb)} ho gaya!`);
       computeSummary(); renderCustList(); renderDetail();
     }catch(e){alert('Error: '+e.message);}
+  };
+
+
+  function khataEffect(t) {
+    const amt = parseFloat(t?.amount || t?.charges) || 0;
+    const type = String(t?.transaction_type || '').toLowerCase();
+    if (type === 'debit' || type === 'recovery' || type === 'vasooli' || type === 'payment') return -amt;
+    if (type === 'credit' || type === 'advance' || type === 'cashadvance') return amt;
+    return 0;
+  }
+
+  function khataTypeLabel(type) {
+    if (type === 'Credit') return 'Debit/Udhaar add karega';
+    if (type === 'Debit') return 'Credit/Jama minus karega';
+    if (type === 'Advance') return 'Cash advance add karega';
+    return type || 'Entry';
+  }
+
+  window.editKhataTransaction = async function(txId) {
+    const t = allTransactions.find(x => Number(x.id) === Number(txId));
+    if (!t) { alert('Entry nahi mili. Page refresh karein.'); return; }
+    const cust = allCustomers.find(c => Number(c.id) === Number(t.customer_id));
+    if (!cust) { alert('Customer nahi mila.'); return; }
+
+    const oldAmt = parseFloat(t.amount || t.charges) || 0;
+    const newAmtRaw = prompt(`Entry update karein\nCustomer: ${cust.name}\nType: ${khataTypeLabel(t.transaction_type)}\nOld amount: Rs.${fmt(oldAmt)}\n\nNew amount enter karein:`, oldAmt);
+    if (newAmtRaw === null) return;
+    const newAmt = parseFloat(newAmtRaw);
+    if (!Number.isFinite(newAmt) || newAmt < 0) { alert('Sahi amount enter karein.'); return; }
+
+    const newType = prompt(`Type update karein:\nCredit = Debit/Udhaar add\nDebit = Credit/Jama minus\nAdvance = Cash advance add\n\nCurrent: ${t.transaction_type}`, t.transaction_type || 'Credit');
+    if (newType === null) return;
+    const cleanType = String(newType || '').trim();
+    if (!['Credit','Debit','Advance'].includes(cleanType)) { alert('Type sirf Credit, Debit, ya Advance ho sakta hai.'); return; }
+
+    const newDesc = prompt('Description / note update karein:', t.description || '') ?? (t.description || '');
+
+    const oldEffect = khataEffect(t);
+    const newEffect = khataEffect({ transaction_type: cleanType, amount: newAmt });
+    const currentBal = parseFloat(cust.balance) || 0;
+    const newBal = currentBal - oldEffect + newEffect;
+
+    if (!confirm(`Update confirm?\n\nOld balance: Rs.${fmt(currentBal)}\nNew balance: Rs.${fmt(newBal)}\n\nYe customer balance bhi adjust karega.`)) return;
+
+    try {
+      const { error: tErr } = await supabase.from('transactions').update({
+        transaction_type: cleanType,
+        amount: newAmt,
+        charges: newAmt,
+        description: newDesc,
+        balance_before: currentBal - oldEffect,
+        balance_after: newBal,
+        customer_balance_after: newBal
+      }).eq('id', txId);
+      if (tErr) throw tErr;
+
+      const { error: cErr } = await supabase.from('customers').update({ balance: newBal }).eq('id', cust.id);
+      if (cErr) throw cErr;
+
+      showToast('success','Entry Updated',`${cust.name} ka balance Rs.${fmt(newBal)} ho gaya.`);
+      await loadAll();
+      selectedCust = allCustomers.find(c => Number(c.id) === Number(cust.id));
+      if (selectedCust) { custTxns = allTransactions.filter(x => Number(x.customer_id) === Number(selectedCust.id)); renderDetail(); }
+    } catch(e) { alert('Error: ' + e.message); }
+  };
+
+  window.deleteKhataTransaction = async function(txId) {
+    const t = allTransactions.find(x => Number(x.id) === Number(txId));
+    if (!t) { alert('Entry nahi mili. Page refresh karein.'); return; }
+    const cust = allCustomers.find(c => Number(c.id) === Number(t.customer_id));
+    if (!cust) { alert('Customer nahi mila.'); return; }
+    const effect = khataEffect(t);
+    const currentBal = parseFloat(cust.balance) || 0;
+    const newBal = currentBal - effect;
+    const amt = parseFloat(t.amount || t.charges) || 0;
+
+    if (!confirm(`Is khata entry ko delete/undo karna hai?\n\nCustomer: ${cust.name}\nType: ${t.transaction_type}\nAmount: Rs.${fmt(amt)}\nCurrent balance: Rs.${fmt(currentBal)}\nAfter delete: Rs.${fmt(newBal)}`)) return;
+
+    try {
+      const { error: dErr } = await supabase.from('transactions').delete().eq('id', txId);
+      if (dErr) throw dErr;
+      const { error: cErr } = await supabase.from('customers').update({ balance: newBal }).eq('id', cust.id);
+      if (cErr) throw cErr;
+      showToast('success','Entry Deleted',`${cust.name} ka balance Rs.${fmt(newBal)} ho gaya.`);
+      await loadAll();
+      selectedCust = allCustomers.find(c => Number(c.id) === Number(cust.id));
+      if (selectedCust) { custTxns = allTransactions.filter(x => Number(x.customer_id) === Number(selectedCust.id)); renderDetail(); }
+    } catch(e) { alert('Error: ' + e.message); }
   };
 
   // ── Print Customer Khata ──────────────────────────────────
@@ -843,7 +936,7 @@ ${c.phone?`<div class="info-box" style="background:#cce5ff;border:1px solid #006
     }
 
     if(!list.length) {
-      tbody.innerHTML = `<tr><td colspan="5" class="text-center py-3 text-muted">Koi matching customer nahi mila</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="6" class="text-center py-3 text-muted">Koi matching customer nahi mila</td></tr>`;
       return;
     }
 

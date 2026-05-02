@@ -85,7 +85,7 @@
 
     const { data, error } = await sb()
       .from('customers')
-      .select('id,user_id,company_id,sr_no,name,company_name,balance,initial_credit,credit_limit,notes,category,is_company,account_type')
+      .select('*')
       .eq('sr_no', GO_ACCOUNT_SR_NO)
       .maybeSingle();
 
@@ -332,8 +332,17 @@
         bar.textContent = pct + '% used';
       }
 
+      const today = isoToday();
       if (el('ic-current-credit')) el('ic-current-credit').value = num(data.initial_credit || account.initial_credit).toFixed(2);
       if (el('ic-credit-limit')) el('ic-credit-limit').value = num(data.credit_limit || account.credit_limit).toFixed(2);
+      if (el('ic-opening-date')) el('ic-opening-date').value = account.initial_opening_date || account.initial_posting_date || today;
+      if (el('ic-closing-date')) el('ic-closing-date').value = account.initial_closing_date || '';
+      if (el('ic-posting-date')) el('ic-posting-date').value = account.initial_posting_date || account.initial_opening_date || today;
+      if (el('ic-document-date')) el('ic-document-date').value = account.initial_document_date || account.initial_opening_date || today;
+      if (el('ic-document-no')) el('ic-document-no').value = account.initial_document_no || '';
+      if (el('ic-reference')) el('ic-reference').value = account.initial_reference_no || '';
+      if (el('ic-doc-type')) el('ic-doc-type').value = account.initial_doc_type || 'OP';
+      if (el('ic-description')) el('ic-description').value = account.initial_description || 'Opening / Initial Credit from GO Company';
       if (el('ic-notes')) el('ic-notes').value = account.notes || '';
     } catch (e) {
       console.warn('loadCompanySummary:', e.message);
@@ -426,7 +435,9 @@
       const credit = isOut ? 0 : net;
       running = running + debit - credit;
       const desc = t.description || c.label || '-';
-      const openingClosing = i === 0 ? `Open: Rs.${fmt(initialBalance)}` : '0.00';
+      const openingClosing = i === 0
+        ? `Open: ${dateOnly(cachedCompanyAccount?.initial_opening_date || t.txn_date || t.created_at)}${cachedCompanyAccount?.initial_closing_date ? '<br>Close: ' + dateOnly(cachedCompanyAccount.initial_closing_date) : ''}<br>Rs.${fmt(initialBalance)}`
+        : '0.00';
       const badgeStyle = `padding:2px 8px;border-radius:4px;font-size:11px;font-weight:800;background:${c.bg};color:${c.clr};white-space:nowrap;`;
 
       return `<tr>
@@ -463,14 +474,23 @@
   window.handleInitialCredit = async function () {
     const initialCredit = num(el('ic-current-credit')?.value);
     const creditLimit = num(el('ic-credit-limit')?.value);
+    const openingDate = el('ic-opening-date')?.value || isoToday();
+    const closingDate = el('ic-closing-date')?.value || null;
+    const postingDate = el('ic-posting-date')?.value || openingDate;
+    const documentDate = el('ic-document-date')?.value || openingDate;
+    const documentNo = el('ic-document-no')?.value?.trim() || `OPEN-${openingDate}`;
+    const referenceNo = el('ic-reference')?.value?.trim() || '';
+    const docType = el('ic-doc-type')?.value || 'OP';
+    const description = el('ic-description')?.value?.trim() || 'Opening / Initial Credit from GO Company';
     const notes = el('ic-notes')?.value?.trim() || '';
 
     if (initialCredit < 0) { alert('Initial credit negative nahi ho sakta.'); return; }
     if (creditLimit < 0) { alert('Credit limit negative nahi ho sakti.'); return; }
+    if (!openingDate || !postingDate || !documentDate) { alert('Opening, Posting aur Document date zaroor enter karein.'); return; }
 
     try {
       const account = await getCompanyAccount(true);
-      const { error } = await sb().from('customers').update({
+      const payload = {
         name: account.name || COMPANY_DISPLAY_NAME,
         company_name: COMPANY_DISPLAY_NAME,
         category: 'Company',
@@ -478,10 +498,58 @@
         account_type: 'company',
         initial_credit: initialCredit,
         credit_limit: creditLimit,
+        initial_opening_date: openingDate,
+        initial_closing_date: closingDate,
+        initial_posting_date: postingDate,
+        initial_document_date: documentDate,
+        initial_document_no: documentNo,
+        initial_reference_no: referenceNo,
+        initial_doc_type: docType,
+        initial_description: description,
         notes,
         updated_at: new Date().toISOString()
-      }).eq('id', account.id);
+      };
+
+      let { error } = await sb().from('customers').update(payload).eq('id', account.id);
+      if (error && /schema cache|column|initial_/i.test(error.message || '')) {
+        // Old DB without the new detail columns: keep the app working, but SQL must be run for full print details.
+        const fallback = { ...payload };
+        ['initial_opening_date','initial_closing_date','initial_posting_date','initial_document_date','initial_document_no','initial_reference_no','initial_doc_type','initial_description'].forEach(k => delete fallback[k]);
+        const retry = await sb().from('customers').update(fallback).eq('id', account.id);
+        error = retry.error;
+      }
       if (error) throw error;
+
+      // Keep a visible opening entry in company_transactions too, but mark it as zero-value detail entry
+      // so it will not double-count the initial_credit summary. The print uses customer opening fields.
+      const userId = await getCurrentUserId();
+      const detailPayload = {
+        ...companyTxnBasePayload(account, userId),
+        txn_type: 'initial_credit',
+        direction: 'out',
+        amount: 0,
+        charges: 0,
+        reference_no: referenceNo,
+        document_no: documentNo,
+        posting_date: postingDate,
+        document_date: documentDate,
+        opening_date: openingDate,
+        closing_date: closingDate,
+        doc_type: docType,
+        txn_date: documentDate,
+        description: `${description} | Opening: ${openingDate}${closingDate ? ' | Closing: ' + closingDate : ''} | Amount: Rs.${fmt(initialCredit)} | Doc: ${documentNo}`,
+        notes
+      };
+      try {
+        await sb().from('company_transactions').delete()
+          .eq('b2b_company_id', account.id).eq('txn_type', 'initial_credit').eq('amount', 0).eq('charges', 0);
+        let ins = await sb().from('company_transactions').insert([detailPayload]);
+        if (ins.error && /schema cache|column|document_no|posting_date|opening_date|doc_type/i.test(ins.error.message || '')) {
+          const fallbackDetail = { ...detailPayload };
+          ['document_no','posting_date','document_date','opening_date','closing_date','doc_type'].forEach(k => delete fallbackDetail[k]);
+          ins = await sb().from('company_transactions').insert([fallbackDetail]);
+        }
+      } catch (_) {}
 
       cachedCompanyAccount = null;
       showToast('success', 'Initial Credit Saved', `Rs.${fmt(initialCredit)} initial credit update ho gaya ✓`);
@@ -937,13 +1005,14 @@
 
       const rows = [];
       rows.push({
-        postingDate: from || isoToday(),
-        docDate: from || isoToday(),
-        docNo: 'OPENING',
-        reference: '',
-        docType: 'OP',
-        description: 'Opening / Initial Credit',
+        postingDate: account.initial_posting_date || from || account.initial_opening_date || isoToday(),
+        docDate: account.initial_document_date || account.initial_opening_date || from || isoToday(),
+        docNo: account.initial_document_no || 'OPENING',
+        reference: account.initial_reference_no || '',
+        docType: account.initial_doc_type || 'OP',
+        description: account.initial_description || 'Opening / Initial Credit',
         opening: initial,
+        openingClosing: `Open: ${dateOnly(account.initial_opening_date || from || isoToday())}${account.initial_closing_date ? '<br>Close: ' + dateOnly(account.initial_closing_date) : ''}<br>Rs.${fmt(initial)}`,
         debit: 0,
         credit: 0,
         balance
@@ -959,13 +1028,14 @@
         balance += debit - credit;
         const cfg = txnConfig(t.txn_type);
         rows.push({
-          postingDate: t.created_at || t.txn_date,
-          docDate: t.txn_date,
-          docNo: t.id,
-          reference: t.reference_no || '',
-          docType: t.txn_type === 'stock_purchase' ? 'FL' : t.txn_type?.startsWith('repayment') ? 'DZ' : t.txn_type === 'member_usage' ? 'RV' : 'JV',
+          postingDate: t.posting_date || t.created_at || t.txn_date,
+          docDate: t.document_date || t.txn_date,
+          docNo: t.document_no || docNoFor(t, rows.length),
+          reference: referenceFor(t),
+          docType: t.doc_type || docTypeFor(t),
           description: (t.description || cfg.label || t.txn_type || '').replace(/[📦💳🏦📋✅⚙️]/g, '').trim(),
           opening: 0,
+          openingClosing: t.opening_date || t.closing_date ? `Open: ${dateOnly(t.opening_date || t.txn_date)}${t.closing_date ? '<br>Close: ' + dateOnly(t.closing_date) : ''}` : '0.00',
           debit,
           credit,
           balance
@@ -988,7 +1058,7 @@
 <div class="box"><strong>To:</strong> ${esc(account.name || COMPANY_DISPLAY_NAME)}<br><strong>From:</strong> ${esc(from || 'Opening')} &nbsp;&nbsp; <strong>To:</strong> ${esc(to || isoToday())}</div>
 <div class="statement-title">Company Account Statement</div>
 <table><thead><tr><th>Posting Date</th><th>Document Date</th><th>Document No.</th><th>Reference</th><th>Doc Type</th><th>Description</th><th>Opening / Closing</th><th>Debit</th><th>Credit</th><th>Balance</th></tr></thead><tbody>
-${rows.map(r => `<tr><td>${dateOnly(r.postingDate)}</td><td>${dateOnly(r.docDate)}</td><td>${esc(r.docNo)}</td><td>${esc(r.reference || '')}</td><td style="text-align:center">${esc(r.docType)}</td><td class="desc ${r.docType === 'FL' ? 'fuel' : ''}">${esc(r.description)}</td><td class="num">${r.opening ? fmt(r.opening) : '0.00'}</td><td class="num ${r.debit ? 'debit' : ''}">${r.debit ? fmt(r.debit) : '0.00'}</td><td class="num ${r.credit ? 'credit' : ''}">${r.credit ? fmt(r.credit) : '0.00'}</td><td class="num">${fmt(r.balance)}</td></tr>`).join('')}
+${rows.map(r => `<tr><td>${dateOnly(r.postingDate)}</td><td>${dateOnly(r.docDate)}</td><td>${esc(r.docNo)}</td><td>${esc(r.reference || '')}</td><td style="text-align:center">${esc(r.docType)}</td><td class="desc ${r.docType === 'FL' ? 'fuel' : ''}">${esc(r.description)}</td><td class="num">${r.openingClosing || (r.opening ? fmt(r.opening) : '0.00')}</td><td class="num ${r.debit ? 'debit' : ''}">${r.debit ? fmt(r.debit) : '0.00'}</td><td class="num ${r.credit ? 'credit' : ''}">${r.credit ? fmt(r.credit) : '0.00'}</td><td class="num">${fmt(r.balance)}</td></tr>`).join('')}
 <tr class="total-row"><td colspan="7" style="text-align:right">TOTAL</td><td class="num">${fmt(debitTotal)}</td><td class="num">${fmt(creditTotal)}</td><td class="num">${fmt(balance)}</td></tr>
 </tbody></table>
 <table class="summary"><thead><tr><th>Summary</th><th>Amount</th></tr></thead><tbody>${Object.entries(summaryRows).slice(0,8).map(([k,v])=>`<tr><td>${esc(k)}</td><td class="num">${fmt(v)}</td></tr>`).join('')}<tr class="total-row"><td>Total Closing Balance</td><td class="num">${fmt(balance)}</td></tr></tbody></table>

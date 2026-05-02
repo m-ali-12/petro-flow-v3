@@ -167,6 +167,15 @@ CREATE INDEX IF NOT EXISTS idx_cash_deposits_bank ON public.cash_deposits(bank_i
 -- 7) Customer/GO account compatibility
 ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS initial_credit NUMERIC(14,2) DEFAULT 0;
 ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS credit_limit NUMERIC(14,2) DEFAULT 0;
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS initial_opening_date DATE;
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS initial_closing_date DATE;
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS initial_posting_date DATE;
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS initial_document_date DATE;
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS initial_document_no TEXT;
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS initial_reference_no TEXT;
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS initial_doc_type TEXT DEFAULT 'OP';
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS initial_description TEXT;
+
 ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS company_name TEXT;
 ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS is_company BOOLEAN DEFAULT FALSE;
 ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS account_type TEXT;
@@ -528,3 +537,16 @@ SELECT 'PetroFlow final fix v3 completed successfully' AS status;
 
 -- Force PostgREST/Supabase schema cache refresh
 NOTIFY pgrst, 'reload schema';
+
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='company_transactions') THEN
+    ALTER TABLE public.company_transactions ADD COLUMN IF NOT EXISTS document_no TEXT;
+    ALTER TABLE public.company_transactions ADD COLUMN IF NOT EXISTS posting_date DATE;
+    ALTER TABLE public.company_transactions ADD COLUMN IF NOT EXISTS document_date DATE;
+    ALTER TABLE public.company_transactions ADD COLUMN IF NOT EXISTS opening_date DATE;
+    ALTER TABLE public.company_transactions ADD COLUMN IF NOT EXISTS closing_date DATE;
+    ALTER TABLE public.company_transactions ADD COLUMN IF NOT EXISTS doc_type TEXT;
+  END IF;
+END $$;
