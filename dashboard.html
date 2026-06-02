@@ -1,0 +1,27 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Dashboard</title>
+  <script src="js/transactions.js"></script>
+  <script src="js/pro-analytics.js"></script>
+</head>
+<body>
+
+<h1>Finance Dashboard</h1>
+
+<div id="summary"></div>
+
+<script>
+(async function () {
+  const s = await ProAnalytics.summary();
+  document.getElementById("summary").innerHTML = `
+    <h3>Total Credit: ${s.credit}</h3>
+    <h3>Total Debit: ${s.debit}</h3>
+    <h2>Balance: ${s.balance}</h2>
+  `;
+})();
+</script>
+
+</body>
+</html>
