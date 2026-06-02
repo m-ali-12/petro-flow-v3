@@ -483,6 +483,16 @@
       }
     }
 
+    function isSalaryExpenseType(tt) {
+      return ['SalaryPay','EmployeeAdvance','EmployeeDebit'].includes(tt);
+    }
+    function isRealExpenseType(tt) {
+      return tt === 'Expense' || isSalaryExpenseType(tt);
+    }
+    function isBankMovementType(tt) {
+      return ['BankDeposit','BankTransfer','BankCredit','BankPayment'].includes(tt);
+    }
+
     // ── Compute Aggregates ────────────────────────────────────────
     function computeAgg() {
       const a = {
@@ -501,7 +511,16 @@
           case 'Credit':  a.creditSales += v; a.txnCnt++; break;
           case 'Debit':   a.vasooli     += v; a.vCnt++;   break;
           case 'Expense': a.expenses    += v; a.expCnt++; break;
+          case 'SalaryPay':
+          case 'EmployeeAdvance':
+          case 'EmployeeDebit':
+            a.expenses += v; a.expCnt++; break;
           case 'Advance': a.advanceOut  += v; break;
+          case 'BankDeposit':
+          case 'BankTransfer':
+          case 'BankCredit':
+          case 'BankPayment':
+            break; // Bank movement only — P&L income/expense nahi
         }
       });
 
@@ -659,6 +678,9 @@
         <div class="pls-row indent"><span>💸 Operating Expenses (Kharche)</span><span class="profit-neg">− Rs.${fmt(a.expenses)}</span></div>
         <div class="pls-row indent"><span>💵 Cash Advances Given</span><span class="profit-neg">− Rs.${fmt(a.advanceOut)}</span></div>
         <div class="pls-row subtotal"><span>TOTAL DEDUCTIONS</span><span class="profit-neg">Rs.${fmt(a.expenses + a.advanceOut)}</span></div>
+        <div class="alert alert-light border py-2 my-2" style="font-size:12px;">
+          <strong>Note:</strong> Daily Reading ka cash pehle CashSale income mein count hota hai. Bank deposit sirf cash ko bank mein transfer karta hai, is liye deposit ko dobara profit mein add nahi kiya gaya.
+        </div>
 
         <div class="pls-row ${isProfit ? 'grand-profit' : 'grand-loss'}">
           <span>${isProfit ? '📈 NET MUNAFA (PROFIT)' : '📉 NET NUQSAN (LOSS)'}</span>
@@ -704,7 +726,7 @@
         const v = parseFloat(t.charges) || 0;
         if (t.transaction_type==='CashSale'||t.transaction_type==='Credit') months[key].fuel     += v;
         if (t.transaction_type==='Debit')   months[key].vasooli  += v;
-        if (t.transaction_type==='Expense') months[key].expenses += v;
+        if (isRealExpenseType(t.transaction_type)) months[key].expenses += v;
         if (t.transaction_type==='Advance') months[key].advances += v;
       });
 
@@ -771,7 +793,7 @@
         const v = parseFloat(t.charges) || 0;
         if (t.transaction_type==='CashSale'||t.transaction_type==='Credit') days[key].fuel     += v;
         if (t.transaction_type==='Debit')   days[key].vasooli  += v;
-        if (t.transaction_type==='Expense') days[key].expenses += v;
+        if (isRealExpenseType(t.transaction_type)) days[key].expenses += v;
         if (t.transaction_type==='Advance') days[key].advances += v;
       });
 
@@ -838,6 +860,13 @@
           src = t.expense_type || 'Expense'; srcClass = 'src-exp';
           typeLabel = 'Expense'; typeClass = 'src-exp'; isIncome = false;
           show = filter==='all' || filter==='expense';
+        } else if (isSalaryExpenseType(tt)) {
+          src = tt === 'SalaryPay' ? 'Employee Salary' : tt === 'EmployeeAdvance' ? 'Employee Advance' : 'Employee Debit';
+          srcClass = 'src-exp'; typeLabel = src; typeClass = 'src-exp'; isIncome = false;
+          show = filter==='all' || filter==='expense';
+        } else if (isBankMovementType(tt)) {
+          // Bank deposit/transfer/credit/payment are balance movements, not P&L lines.
+          show = false;
         } else if (tt === 'Advance') {
           src = 'Advance'; srcClass = 'src-credit';
           typeLabel = 'Advance'; typeClass = 'src-credit'; isIncome = false;
@@ -894,10 +923,11 @@
     // ── Section 8: Expense Detail ─────────────────────────────────
     function renderExpenseDetail() {
       const cats = {};
-      STATE.txns.filter(t => t.transaction_type==='Expense').forEach(t => {
-        const cat = t.expense_type
-          || (t.description && t.description.includes(':') ? t.description.split(':')[0].trim() : null)
-          || 'Miscellaneous';
+      STATE.txns.filter(t => isRealExpenseType(t.transaction_type)).forEach(t => {
+        const cat = t.transaction_type === 'SalaryPay' ? 'Employee Salary' :
+          t.transaction_type === 'EmployeeAdvance' ? 'Employee Advance' :
+          t.transaction_type === 'EmployeeDebit' ? 'Employee Debit' :
+          t.expense_type || (t.description && t.description.includes(':') ? t.description.split(':')[0].trim() : null) || 'Miscellaneous';
         cats[cat] = (cats[cat] || 0) + (parseFloat(t.charges) || 0);
       });
 
@@ -963,7 +993,7 @@
         if (!m) return;
         const v = parseFloat(t.charges) || 0;
         if (t.transaction_type==='CashSale'||t.transaction_type==='Credit') m.fuel     += v;
-        if (t.transaction_type==='Expense'||t.transaction_type==='Advance') m.expenses += v;
+        if (isRealExpenseType(t.transaction_type)||t.transaction_type==='Advance') m.expenses += v;
       });
 
       STATE.mobilSales.forEach(ms => {
@@ -1007,7 +1037,7 @@
       const ecWrap = el('expense-chart-wrap');
       if (ecWrap) {
         const cats = {};
-        STATE.txns.filter(t => t.transaction_type==='Expense').forEach(t => {
+        STATE.txns.filter(t => isRealExpenseType(t.transaction_type)).forEach(t => {
           const cat = t.expense_type || 'Other';
           cats[cat] = (cats[cat]||0) + (parseFloat(t.charges)||0);
         });

@@ -73,6 +73,20 @@
   let _petrolCount = 0;
   let _dieselCount = 0;
 
+  async function getOwnerId() {
+    if (window.PetroLedger?.getOwnerCustomerId) return await window.PetroLedger.getOwnerCustomerId();
+    return null;
+  }
+
+  async function adjustOwnerCash(delta) {
+    const ownerId = await getOwnerId();
+    if (!ownerId || !delta) return true;
+    if (window.PetroLedger?.adjustCustomerBalance) {
+      return await window.PetroLedger.adjustCustomerBalance(ownerId, delta);
+    }
+    return true;
+  }
+
   /* ═══════════════════════════════════════════════════════════
      SETTINGS — PRICE HISTORY (exact same logic as settings-page.js)
      price_history JSONB array: [{date, petrol, diesel, updated_by}]
@@ -355,6 +369,8 @@
 
     // PKT midnight timestamp
     const createdAt = date + 'T00:00:01+05:00';
+    const ownerId = await getOwnerId();
+    let totalCashForOwner = 0;
 
     const inserts = [];
 
@@ -370,8 +386,10 @@
       const liters = parseFloat(Math.max(0, litersRaw - te).toFixed(3));
       const gross  = parseFloat((liters * petrolRate).toFixed(2));
       const cash   = parseFloat((gross - ud).toFixed(2));
+      totalCashForOwner += cash;
 
       inserts.push({
+        ...(ownerId ? { customer_id: ownerId } : {}),
         transaction_type: 'CashSale',
         fuel_type:        'Petrol',
         entry_method:     'machine_reading',
@@ -407,8 +425,10 @@
       const liters = parseFloat(Math.max(0, litersRaw - te).toFixed(3));
       const gross  = parseFloat((liters * dieselRate).toFixed(2));
       const cash   = parseFloat((gross - ud).toFixed(2));
+      totalCashForOwner += cash;
 
       inserts.push({
+        ...(ownerId ? { customer_id: ownerId } : {}),
         transaction_type: 'CashSale',
         fuel_type:        'Diesel',
         entry_method:     'machine_reading',
@@ -440,8 +460,9 @@
     try {
       const { error } = await sb.from('transactions').insert(inserts);
       if (error) throw error;
+      if (ownerId && totalCashForOwner) await adjustOwnerCash(totalCashForOwner);
 
-      showToast('success', 'Saved! ✅', `${inserts.length} machine reading(s) save ho gayi!`);
+      showToast('success', 'Saved! ✅', `${inserts.length} machine reading(s) save ho gayi aur Owner/Cash khata update ho gaya!`);
 
       const modal = bootstrap.Modal.getInstance(el('addReadingModal'));
       if (modal) modal.hide();
@@ -476,7 +497,7 @@
     try {
       // Machine readings query
       let q = sb.from('transactions')
-        .select('id, transaction_type, fuel_type, charges, amount, liters, unit_price, description, created_at, entry_method')
+        .select('id, customer_id, transaction_type, fuel_type, charges, amount, liters, unit_price, description, created_at, entry_method')
         .eq('transaction_type', 'CashSale')
         .eq('entry_method', 'machine_reading')
         .gte('created_at', from + 'T00:00:00+05:00')
@@ -754,8 +775,11 @@
       }).eq('id', id);
 
       if (error) throw error;
+      const oldCash = parseFloat(orig?.charges ?? orig?.amount) || 0;
+      const diff = cash - oldCash;
+      if (diff) await adjustOwnerCash(diff);
 
-      showToast('success', 'Updated ✅', 'Reading update ho gayi');
+      showToast('success', 'Updated ✅', 'Reading update ho gayi aur Owner/Cash khata adjust ho gaya');
       bootstrap.Modal.getInstance(el('editReadingModal'))?.hide();
       DR.load();
 
@@ -768,12 +792,15 @@
      DELETE
   ═══════════════════════════════════════════════════════════ */
   DR.del = async function(id) {
-    if (!confirm('Yeh reading delete karein? Yeh action undo nahi ho sakta.')) return;
+    if (!confirm('Yeh reading delete karein? Owner/Cash khata bhi reverse ho jayega.')) return;
     const sb = window.supabaseClient;
     try {
+      const existing = _rows.find(r => String(r.id) === String(id));
+      const oldCash = parseFloat(existing?.charges ?? existing?.amount) || 0;
       const { error } = await sb.from('transactions').delete().eq('id', id);
       if (error) throw error;
-      showToast('success', 'Deleted', 'Reading delete ho gayi');
+      if (oldCash) await adjustOwnerCash(-oldCash);
+      showToast('success', 'Deleted', 'Reading delete ho gayi aur Owner/Cash khata reverse ho gaya');
       DR.load();
     } catch (e) {
       showToast('danger', 'Delete Error', e.message);

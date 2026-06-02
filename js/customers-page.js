@@ -729,10 +729,13 @@ function display(list) {
   }
 
   tbody.innerHTML = pageItems.map(c => {
-    const balCls = c.balance > 0 ? 'text-danger fw-bold' :
-                   c.balance < 0 ? 'text-success fw-bold' : 'text-muted';
-    const balTxt = c.balance > 0 ? `Rs. ${fmt(c.balance)} (Udhaar)` :
-                   c.balance < 0 ? `Rs. ${fmt(Math.abs(c.balance))} (Advance)` : 'Rs. 0.00';
+    const bal = parseFloat(c.balance) || 0;
+    const isOwner = (c.category || '').toLowerCase() === 'owner';
+    const balCls = bal > 0 ? (isOwner ? 'text-success fw-bold' : 'text-danger fw-bold') :
+                   bal < 0 ? (isOwner ? 'text-danger fw-bold' : 'text-success fw-bold') : 'text-muted';
+    const balTxt = isOwner
+      ? (bal > 0 ? `Rs. ${fmt(bal)} (Cash/Credit)` : bal < 0 ? `Rs. ${fmt(Math.abs(bal))} (Debit/Out)` : 'Rs. 0.00')
+      : (bal > 0 ? `Rs. ${fmt(bal)} (Udhaar)` : bal < 0 ? `Rs. ${fmt(Math.abs(bal))} (Advance)` : 'Rs. 0.00');
     const catCls = c.category === 'Member'  ? 'text-bg-primary' :
                    c.category === 'Company' ? 'text-bg-warning' :
                    c.category === 'Owner'   ? 'text-bg-success' : 'text-bg-secondary';
@@ -826,8 +829,12 @@ function updateSummary() {
   const list = getCurrentFilteredList();
   let udhaar = 0, advance = 0, companies = 0;
   list.forEach(c => {
-    if (c.balance > 0) udhaar += c.balance;
-    else if (c.balance < 0) advance += Math.abs(c.balance);
+    const bal = parseFloat(c.balance) || 0;
+    const isOwner = (c.category || '').toLowerCase() === 'owner';
+    if (!isOwner) {
+      if (bal > 0) udhaar += bal;
+      else if (bal < 0) advance += Math.abs(bal);
+    }
     if (c.category === 'Company') companies++;
   });
   const set = (id,v) => { const el=$(id); if(el) el.textContent=v; };
@@ -858,8 +865,8 @@ function ensureSummaryModal(){
 function showCustomerSummary(kind){
   let list=getCurrentFilteredList();
   const titleMap={all:'All Customers',udhaar:'Udhaar Customers',advance:'Advance Customers',companies:'Company Customers'};
-  if(kind==='udhaar') list=list.filter(c=>(parseFloat(c.balance)||0)>0);
-  else if(kind==='advance') list=list.filter(c=>(parseFloat(c.balance)||0)<0);
+  if(kind==='udhaar') list=list.filter(c=>(c.category||'').toLowerCase()!=='owner' && (parseFloat(c.balance)||0)>0);
+  else if(kind==='advance') list=list.filter(c=>(c.category||'').toLowerCase()!=='owner' && (parseFloat(c.balance)||0)<0);
   else if(kind==='companies') list=list.filter(c=>c.category==='Company');
   const total=list.reduce((s,c)=>s+Math.abs(parseFloat(c.balance)||0),0);
   const modal=ensureSummaryModal();
@@ -875,8 +882,11 @@ function showCustomerSummary(kind){
       <thead class="table-dark"><tr><th>SR#</th><th>Name</th><th>Phone</th><th>Category</th><th>Balance</th><th>Action</th></tr></thead>
       <tbody>${list.map(c=>{
         const bal=parseFloat(c.balance)||0;
-        const cls=bal>0?'text-danger':bal<0?'text-success':'text-muted';
-        const txt=bal>0?`Udhaar Rs. ${fmt(bal)}`:bal<0?`Advance Rs. ${fmt(Math.abs(bal))}`:'Rs. 0.00';
+        const isOwner=(c.category||'').toLowerCase()==='owner';
+        const cls=bal>0?(isOwner?'text-success':'text-danger'):bal<0?(isOwner?'text-danger':'text-success'):'text-muted';
+        const txt=isOwner
+          ? (bal>0?`Cash/Credit Rs. ${fmt(bal)}`:bal<0?`Debit/Out Rs. ${fmt(Math.abs(bal))}`:'Rs. 0.00')
+          : (bal>0?`Udhaar Rs. ${fmt(bal)}`:bal<0?`Advance Rs. ${fmt(Math.abs(bal))}`:'Rs. 0.00');
         return `<tr><td><strong>#${c.sr_no||'-'}</strong></td><td>${c.name||'-'}</td><td>${c.phone||'-'}</td><td>${c.category||'-'}</td><td class="fw-bold ${cls}">${txt}</td><td><button class="btn btn-sm btn-outline-primary" onclick="window.viewLedger(${Number(c.id)})"><i class="bi bi-eye me-1"></i>Ledger</button></td></tr>`;
       }).join('')}</tbody></table></div>`;
   }

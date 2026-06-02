@@ -78,6 +78,13 @@
     return res;
   }
 
+  async function applyLedgerImpact(payload, reverse = false) {
+    if (window.PetroLedger?.applyTransactionBalance) {
+      return await window.PetroLedger.applyTransactionBalance(payload, reverse);
+    }
+    return true;
+  }
+
   // Ensure settings row exists (optional but best)
   async function ensureSettingsRow(userId) {
     try {
@@ -368,7 +375,7 @@
     try {
       const { data, error } = await supabase
         .from("transactions")
-        .select("*, customers!inner(name, sr_no)")
+        .select("*, customers(name, sr_no, category)")
         .eq("user_id", user.id)
         .order("created_at", { ascending: sortOrder === "asc" })
         .limit(1000);
@@ -478,7 +485,7 @@
     try {
       let query = supabase
         .from("transactions")
-        .select("*, customers!inner(name, sr_no)")
+        .select("*, customers(name, sr_no, category)")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false });
 
@@ -565,7 +572,12 @@
       const { error } = await safeInsertTransaction(payload);
       if (error) throw error;
 
-      alert("✅ Sale saved!");
+      const customer = allCustomers.find((c) => String(c.id) === String(customerId));
+      if (paymentType !== "cash") {
+        await applyLedgerImpact({ ...payload, customer_category: customer?.category || "" });
+      }
+
+      alert("✅ Sale saved and customer khata updated!");
       closeModal("newSaleModal");
       await loadInitialTransactions();
       await loadCustomers();
@@ -633,7 +645,9 @@
       const { error } = await safeInsertTransaction(payload);
       if (error) throw error;
 
-      alert("✅ Vasooli saved!");
+      await applyLedgerImpact({ ...payload, customer_category: customer?.category || "" });
+
+      alert("✅ Vasooli saved and customer khata updated!");
       closeModal("vasooliModal");
       await loadInitialTransactions();
       await loadCustomers();
@@ -666,23 +680,9 @@
 
     isSubmitting = true;
     try {
-      // Find Owner customer, else first customer, else create Owner
-      let owner = allCustomers.find((c) => (c.category || "").toLowerCase() === "owner");
-      let ownerId = owner?.id || null;
-
-      if (!ownerId && allCustomers.length > 0) ownerId = allCustomers[0].id;
-
-      if (!ownerId) {
-        const { data: created, error: createErr } = await supabase
-          .from("customers")
-          .insert([{ user_id: user.id, sr_no: 0, name: "Owner", category: "Owner", balance: 0 }])
-          .select()
-          .single();
-
-        if (createErr) throw createErr;
-        ownerId = created.id;
-        await loadCustomers();
-      }
+      // Owner / Cash account manages station cash outflow.
+      const ownerId = await (window.PetroLedger?.getOwnerCustomerId ? window.PetroLedger.getOwnerCustomerId() : null);
+      if (!ownerId) throw new Error("Owner / Cash account not available. Please add Owner customer once.");
 
       const fullDesc =
         expenseType || expenseAccount
@@ -702,7 +702,9 @@
       const { error } = await safeInsertTransaction(payload);
       if (error) throw error;
 
-      alert("✅ Expense saved!");
+      await applyLedgerImpact({ ...payload, customer_category: "Owner" });
+
+      alert("✅ Expense saved and Owner account updated!");
       closeModal("expenseModal");
       await loadInitialTransactions();
       await loadCustomers();
@@ -721,14 +723,27 @@
     const user = await getUserOrNull();
     if (!user) return;
 
-    if (!confirm("Delete this transaction?")) return;
+    if (!confirm("Delete this transaction? Khata balance will also be reversed.")) return;
 
     try {
+      const { data: tx, error: readErr } = await supabase
+        .from("transactions")
+        .select("*, customers(category)")
+        .eq("id", id)
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (readErr) throw readErr;
+
       const { error } = await supabase.from("transactions").delete().eq("id", id).eq("user_id", user.id);
       if (error) throw error;
 
-      alert("✅ Deleted!");
+      if (tx) {
+        await applyLedgerImpact({ ...tx, customer_category: tx.customers?.category || tx.customer_category || "" }, true);
+      }
+
+      alert("✅ Deleted and khata balance reversed!");
       await loadInitialTransactions();
+      await loadCustomers();
     } catch (err) {
       console.error("❌ delete error:", err);
       alert("Error: " + err.message);
