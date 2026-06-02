@@ -31,7 +31,7 @@
     <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
       <div>
         <h4 class="mb-1"><i class="bi bi-person-vcard me-2"></i>Employee Salary</h4>
-        <small class="opacity-75">Add employees and pay monthly salary with bank/cash record</small>
+        <small class="opacity-75">Customer list se employee salary aur advance salary pay karein</small>
       </div>
       <div class="d-flex align-items-center gap-2 flex-wrap">
         <div id="user-role-badge"></div>
@@ -39,7 +39,7 @@
           <i class="bi bi-person-plus me-1"></i>New Employee
         </button>
         <button class="btn btn-warning btn-sm fw-semibold" onclick="openSalaryModal()">
-          <i class="bi bi-cash-coin me-1"></i>Pay Salary
+          <i class="bi bi-cash-coin me-1"></i>Pay Salary / Advance
         </button>
       </div>
     </div>
@@ -50,7 +50,7 @@
   <div class="row g-3 mb-4">
     <div class="col-6 col-lg-3">
       <div class="stat-card blue">
-        <div class="small opacity-75 mb-1">Active Employees</div>
+        <div class="small opacity-75 mb-1">Customer / Employee List</div>
         <div class="fs-4 fw-bold" id="stat-employees">0</div>
       </div>
     </div>
@@ -62,8 +62,8 @@
     </div>
     <div class="col-6 col-lg-3">
       <div class="stat-card orange">
-        <div class="small opacity-75 mb-1">Payments This Month</div>
-        <div class="fs-4 fw-bold" id="stat-payment-count">0</div>
+        <div class="small opacity-75 mb-1">Advance This Month</div>
+        <div class="fs-4 fw-bold" id="stat-advance">Rs. 0</div>
       </div>
     </div>
     <div class="col-6 col-lg-3">
@@ -84,7 +84,7 @@
             </div>
             <div class="col-md-4">
               <select class="form-select form-select-sm" id="filter-employee" onchange="loadSalaryPayments()">
-                <option value="">All Employees</option>
+                <option value="">All Customer / Employee List</option>
               </select>
             </div>
             <div class="col-md-3">
@@ -106,7 +106,8 @@
                 <tr>
                   <th>Date</th>
                   <th>Month</th>
-                  <th>Employee</th>
+                  <th>Type</th>
+                  <th>Customer / Employee</th>
                   <th>Amount</th>
                   <th>Mode / Bank</th>
                   <th>Reference</th>
@@ -115,7 +116,7 @@
                 </tr>
               </thead>
               <tbody id="salary-tbody">
-                <tr><td colspan="8" class="text-center py-4 text-muted">Loading salary payments...</td></tr>
+                <tr><td colspan="9" class="text-center py-4 text-muted">Loading salary payments...</td></tr>
               </tbody>
             </table>
           </div>
@@ -130,7 +131,7 @@
     <div class="col-lg-4">
       <div class="card">
         <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center">
-          <span class="fw-semibold"><i class="bi bi-people me-1"></i> Employees</span>
+          <span class="fw-semibold"><i class="bi bi-people me-1"></i> Customer / Employee List</span>
           <button class="btn btn-sm btn-outline-primary" onclick="openEmployeeModal()">
             <i class="bi bi-plus me-1"></i>Add
           </button>
@@ -198,9 +199,16 @@
       <div class="modal-body">
         <input type="hidden" id="salary-id">
         <div class="mb-3">
-          <label class="form-label fw-semibold">Employee <span class="text-danger">*</span></label>
+          <label class="form-label fw-semibold">Customer / Employee <span class="text-danger">*</span></label>
           <select class="form-select" id="salary-employee" required onchange="fillEmployeeSalary()">
-            <option value="">— Select Employee —</option>
+            <option value="">— Select Customer / Employee —</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Payment Type <span class="text-danger">*</span></label>
+          <select class="form-select" id="salary-type" required onchange="fillEmployeeSalary()">
+            <option value="salary">Salary Pay</option>
+            <option value="advance">Advance Salary</option>
           </select>
         </div>
         <div class="row g-3">
@@ -235,7 +243,7 @@
       <div class="modal-footer border-0">
         <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
         <button class="btn btn-primary" onclick="saveSalaryPayment()">
-          <i class="bi bi-save me-1"></i>Save Salary Payment
+          <i class="bi bi-save me-1"></i>Save Salary / Advance
         </button>
       </div>
     </div>
