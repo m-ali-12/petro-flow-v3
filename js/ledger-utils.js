@@ -3,7 +3,7 @@
 // Shared ledger helpers for Customer/Owner/Employee balances.
 // Balance convention:
 // - Normal customer: + = Udhaar, - = Advance
-// - Owner/Cash: + = Cash/Credit available, - = Cash used/outflow
+// - Owner: same as normal customer (+ = Udhaar/Baqi, - = Advance)
 // - Employee: + = Payable/Credit, - = Advance/Debit taken
 // =============================================
 (function(){
@@ -43,7 +43,7 @@
       if (!error && data && data[0]) return data[0];
     } catch(e) { console.warn('Owner lookup skipped:', e.message); }
 
-    const row = { sr_no: 0, name: 'Owner / Cash', category: 'Owner', balance: 0 };
+    const row = { sr_no: 0, name: 'Owner', category: 'Owner', balance: 0 };
     if (userId) row.user_id = userId;
     if (window.currentUserProfile?.company_id) row.company_id = window.currentUserProfile.company_id;
     const { data: created, error: createErr } = await client.from('customers').insert([row]).select('id, sr_no, name, category, balance, user_id').single();
@@ -84,14 +84,8 @@
   };
 
   PF.bankFinanceOwnerDelta = function(type, amount){
-    const amt = PF.parseNum(amount);
-    const t = String(type || 'deposit').toLowerCase();
-    if (t === 'deposit') return -amt;       // cash moved from owner/cash to bank
-    if (t === 'credit') return amt;         // money received/credited
-    if (t === 'transfer') return 0;         // bank-to-bank movement only
-    if (t === 'payment') return -amt;
-    if (t === 'salary_pay') return -amt;
-    if (t === 'expense') return -amt;
+    // Bank finance entries are bank/cash movements, not Owner khata movements.
+    // Owner balance is now managed only through sale/vasooli/cash advance entries.
     return 0;
   };
 
@@ -106,10 +100,8 @@
   };
 
   PF.employeeOwnerDelta = function(type, amount){
-    const amt = PF.parseNum(amount);
-    const t = String(type || 'salary_pay').toLowerCase();
-    if (t === 'credit') return 0;           // only ledger payable, no cash out
-    if (t === 'salary_pay' || t === 'advance' || t === 'debit') return -amt;
+    // Employee salary/advance affects employee ledger and P&L only.
+    // It must not change Owner khata balance.
     return 0;
   };
 
@@ -118,25 +110,18 @@
     const amount = PF.parseNum(tx?.amount ?? tx?.charges);
     const cat = String(category || tx?.customer_category || '').toLowerCase();
 
-    if (cat === 'owner') {
-      if (type === 'cashsale') return amount;
-      if (type === 'bankdeposit') return -amount;
-      if (type === 'bankcredit') return amount;
-      if (type === 'bankpayment' || type === 'salarypay' || type === 'expense' || type === 'employeeadvance' || type === 'employeedebit') return -amount;
-      if (type === 'banktransfer') return 0;
-      if (type === 'debit') return amount;  // cash received
-      if (type === 'credit') return 0;
-      return 0;
-    }
-
-    if (type === 'credit') return amount;   // customer udhaar increases
+    // Owner account follows the same customer-khata rule:
+    // Credit/Advance = Owner/customer ne fuel/cash udhaar liya (baqi increase)
+    // Debit/Vasooli = payment received (baqi decrease, extra payment becomes advance)
+    if (type === 'credit') return amount;   // customer/owner udhaar increases
     if (type === 'debit') {
       const desc = String(tx?.description || '').toLowerCase();
       const looksLikeCashSale = !!tx?.fuel_type && desc.includes('sale') && !desc.includes('payment');
       if (looksLikeCashSale) return 0;      // cash sale to selected customer, no khata effect
       return -amount;                       // vasooli/receipt reduces udhaar
     }
-    if (type === 'advance') return -amount;
+    if (type === 'advance') return amount;   // cash advance given increases receivable
+    if (type === 'advanceused') return amount;
     return 0;
   };
 

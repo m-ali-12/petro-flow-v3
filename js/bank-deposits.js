@@ -499,24 +499,21 @@
     }
     if (error) { toast('Error saving entry: ' + error.message + ' | Please run PETROFLOW_FINANCE_SALARY_DB_CHANGES.sql first.', 'danger'); return; }
 
-    // Keep Owner/Cash account and transaction ledger synced on add/edit.
+    // Keep bank finance transaction ledger synced on add/edit.
+    // Owner khata is not touched because bank deposit/payment is not Owner credit/debit.
     if (id && oldEntry) {
-      await adjustOwnerBalance(typeOf(oldEntry), oldEntry.amount, true);
       try { await sb().from('transactions').delete().eq('cash_deposit_id', id); } catch(e) { console.warn('Old bank-finance transaction delete skipped:', e.message); }
     }
 
     if (savedDeposit) {
       const bank = allBanks.find(b => String(b.id) === String(bankId));
       const dest = allBanks.find(b => String(b.id) === String(toBank));
-      const ownerId = await getOwnerCustomerId();
       const label = typeCfg(type).label;
       const desc = type === 'transfer'
         ? `Bank Transfer from ${bank?.name || 'Bank'} to ${dest?.name || 'Bank'}${ref ? ' | Ref: '+ref : ''}${note ? ' | '+note : ''}`
         : `${label} - ${bank?.name || 'Bank'}${by ? ' | '+by : ''}${ref ? ' | Ref: '+ref : ''}${note ? ' | '+note : ''}`;
 
       await safeInsertBankFinanceTransaction({
-        customer_id: ownerId,
-        customer_category: 'Owner',
         transaction_type: TRANSACTION_MAP[type] || label,
         amount: amount,
         charges: amount,
@@ -528,11 +525,10 @@
         description: desc,
         created_at: new Date(date + 'T12:00:00').toISOString()
       });
-      await adjustOwnerBalance(type, amount, false);
     }
 
     depositModal().hide();
-    toast('✅ Entry saved and Owner account updated!', 'success');
+    toast('✅ Entry saved! Bank finance ledger updated; Owner khata unchanged.', 'success');
     await loadDeposits();
   };
 
@@ -540,12 +536,11 @@
     if (!confirm('Delete this finance entry?')) return;
     const { data: oldEntry } = await sb().from('cash_deposits').select('*').eq('id', id).maybeSingle();
     if (oldEntry) {
-      await adjustOwnerBalance(typeOf(oldEntry), oldEntry.amount, true);
       try { await sb().from('transactions').delete().eq('cash_deposit_id', id); } catch(e) { console.warn('Related bank transaction delete skipped:', e.message); }
     }
     const { error } = await sb().from('cash_deposits').delete().eq('id', id);
     if (error) { toast('Error: ' + error.message, 'danger'); return; }
-    toast('Entry deleted and Owner account updated.', 'warning');
+    toast('Entry deleted. Owner khata unchanged.', 'warning');
     await loadDeposits();
   };
 

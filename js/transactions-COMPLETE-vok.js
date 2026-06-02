@@ -34,6 +34,10 @@
   function fmt(n) { return Number(n||0).toLocaleString('en-PK',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
 
+  function khataLabel(balance){
+    const b = parseFloat(balance)||0;
+    return b > 0 ? `⚠️ Udhaar/Baqi: Rs.${fmt(b)}` : b < 0 ? `✅ Advance: Rs.${fmt(Math.abs(b))}` : '✅ Account Saaf';
+  }
   function txAmount(t){ return parseFloat(t.charges ?? t.amount ?? 0) || 0; }
   function customerById(id){ return allCustomers.find(c => String(c.id) === String(id)); }
   function attachCustomers(rows){
@@ -162,7 +166,7 @@
             ${c.name}
           </span>
           <span style="font-size:12px;font-weight:700;color:${bal>0?'#dc3545':'#198754'};">
-            Rs.${fmt(bal)}
+            ${khataLabel(bal)}
           </span>
         </div>`;
       }).join('');
@@ -183,7 +187,7 @@
           if(textEl) textEl.textContent = `#${cust.sr_no||'-'} — ${cust.name}`;
           if(balEl){
             const b = parseFloat(cust.balance)||0;
-            balEl.textContent = b > 0 ? `⚠️ Khata Baqi: Rs.${fmt(b)}` : `✅ Account Saaf`;
+            balEl.textContent = khataLabel(b);
             balEl.style.color = b > 0 ? '#dc3545' : '#198754';
           }
           if(boxEl) boxEl.style.display = 'flex';
@@ -223,7 +227,7 @@
   function initAllDropdowns() {
     const configs = [
       { key:'sale',    color:'#198754', modalId:'newSaleModal',    custFilter: ()=>true },
-      { key:'vasooli', color:'#0d6efd', modalId:'vasooliModal',    custFilter: c=>c.category!=='Owner' },
+      { key:'vasooli', color:'#0d6efd', modalId:'vasooliModal',    custFilter: ()=>true },
       { key:'advance', color:'#6f42c1', modalId:'cashAdvanceModal',custFilter: ()=>true },
       { key:'expense', color:'#e67e22', modalId:'expenseModal',    custFilter: c=>c.category!=='Owner' },
     ];
@@ -343,7 +347,7 @@
     let cr=0,db=0,ex=0,adv=0,crc=0,dbc=0,exc=0,advc=0;
     txns.forEach(t=>{
       const a=txAmount(t);
-      if(t.transaction_type==='Credit'){cr+=a;crc++;}
+      if(t.transaction_type==='Credit' || t.transaction_type==='AdvanceUsed'){cr+=a;crc++;}
       else if(t.transaction_type==='Debit'){db+=a;dbc++;}
       else if(t.transaction_type==='Expense'){ex+=a;exc++;}
       else if(t.transaction_type==='Advance'){adv+=a;advc++;}
@@ -354,7 +358,7 @@
     if(el('debit-count'))   el('debit-count').textContent   = dbc+' transactions';
     if(el('total-expense')) el('total-expense').textContent = 'Rs. '+fmt(ex);
     if(el('expense-count')) el('expense-count').textContent = exc+' transactions';
-    if(el('net-balance'))   el('net-balance').textContent   = 'Rs. '+fmt(cr-db-ex);
+    if(el('net-balance'))   el('net-balance').textContent   = 'Rs. '+fmt(cr-ex-adv);
     if(el('total-advance')) el('total-advance').textContent = 'Rs. '+fmt(adv);
     if(el('advance-count')) el('advance-count').textContent = advc+' advances';
   }
@@ -385,7 +389,7 @@
     else if(kind==='debit') rows = rows.filter(t=>t.transaction_type==='Debit');
     else if(kind==='expense') rows = rows.filter(t=>t.transaction_type==='Expense');
     else if(kind==='advance') rows = rows.filter(t=>t.transaction_type==='Advance' || t.transaction_type==='AdvanceUsed');
-    else if(kind==='net') rows = rows.filter(t=>['Credit','Debit','Expense'].includes(t.transaction_type));
+    else if(kind==='net') rows = rows.filter(t=>['Credit','AdvanceUsed','Expense','Advance'].includes(t.transaction_type));
 
     const modal=ensureSummaryModal();
     el('summaryDetailTitle').textContent = labels[kind] || 'Details';
@@ -396,7 +400,7 @@
       const c = t.customers || {};
       if(!grouped.has(key)) grouped.set(key,{name:c.name||'N/A',sr:c.sr_no||'-',credit:0,debit:0,expense:0,advance:0,count:0,balance:c.balance});
       const g=grouped.get(key); const a=txAmount(t); g.count++;
-      if(t.transaction_type==='Credit') g.credit+=a;
+      if(t.transaction_type==='Credit' || t.transaction_type==='AdvanceUsed') g.credit+=a;
       else if(t.transaction_type==='Debit') g.debit+=a;
       else if(t.transaction_type==='Expense') g.expense+=a;
       else if(t.transaction_type==='Advance' || t.transaction_type==='AdvanceUsed') g.advance+=a;
@@ -624,7 +628,7 @@
     const pDate=new Date().toLocaleDateString('en-PK',{day:'2-digit',month:'long',year:'numeric'});
     let totCr=0,totDb=0,totEx=0,totAdv=0;
     txns.forEach(t=>{ const a=txAmount(t);
-      if(t.transaction_type==='Credit')totCr+=a;
+      if(t.transaction_type==='Credit'||t.transaction_type==='AdvanceUsed')totCr+=a;
       else if(t.transaction_type==='Debit')totDb+=a;
       else if(t.transaction_type==='Advance')totAdv+=a;
       else if(t.transaction_type==='CashSale')totCr+=a;
@@ -705,7 +709,7 @@ table td{padding:4px 6px;border-bottom:1px solid #eee}tr:nth-child(even) td{back
 <div class="sb" style="background:#cce5ff;border:1px solid #0069d9"><div style="font-size:10px">Vasooli</div><div style="font-size:14px;font-weight:700">Rs.${fmt(totDb)}</div></div>
 <div class="sb" style="background:#fff3cd;border:1px solid #ffc107"><div style="font-size:10px">Expense</div><div style="font-size:14px;font-weight:700">Rs.${fmt(totEx)}</div></div>
 <div class="sb" style="background:#ede7f6;border:1px solid #6f42c1"><div style="font-size:10px">Advance</div><div style="font-size:14px;font-weight:700">Rs.${fmt(totAdv)}</div></div>
-<div class="sb" style="background:#e2e3e5;border:1px solid #6c757d"><div style="font-size:10px">Net</div><div style="font-size:14px;font-weight:700">Rs.${fmt(totCr-totDb-totEx-totAdv)}</div></div>
+<div class="sb" style="background:#e2e3e5;border:1px solid #6c757d"><div style="font-size:10px">Net</div><div style="font-size:14px;font-weight:700">Rs.${fmt(totCr-totEx-totAdv)}</div></div>
 </div>
 ${bodyHtml}
 <div class="sig-row">

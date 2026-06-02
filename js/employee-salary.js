@@ -43,7 +43,7 @@
       const { data } = await sb().from('customers').select('id').eq('category','Owner').maybeSingle();
       if (data?.id) return data.id;
       const { data: created, error } = await sb().from('customers')
-        .insert([{ sr_no: 0, name: 'Owner / Cash', category: 'Owner', balance: 0 }])
+        .insert([{ sr_no: 0, name: 'Owner', category: 'Owner', balance: 0 }])
         .select('id').single();
       if (error) throw error;
       return created?.id || null;
@@ -92,9 +92,9 @@
   }
 
   function ownerDelta(type, amount) {
-    if (window.PetroLedger?.employeeOwnerDelta) return window.PetroLedger.employeeOwnerDelta(type, amount);
-    const amt = Number(amount || 0);
-    return type === 'credit' ? 0 : -amt;
+    // Employee salary/advance is business cash outflow, not Owner khata movement.
+    // It is recorded in P&L through SalaryPay/EmployeeAdvance transactions.
+    return 0;
   }
 
   async function adjustEmployee(employeeId, delta) {
@@ -492,10 +492,7 @@
         else console.warn('Salary bank finance entry skipped:', depRes.error.message);
       }
 
-      const ownerId = await getOwnerCustomerId();
       await safeInsertTransaction({
-        customer_id: ownerId,
-        customer_category: 'Owner',
         transaction_type: type === 'advance' ? 'EmployeeAdvance' : type === 'debit' ? 'EmployeeDebit' : 'SalaryPay',
         amount,
         charges: amount,

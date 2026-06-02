@@ -428,7 +428,7 @@
         let custMap = {}; // id → {name, sr_no}
         if (custIds.size > 0) {
           const { data: custs } = await sb.from('customers')
-            .select('id, name, sr_no')
+            .select('id, name, sr_no, category')
             .in('id', [...custIds]);
           (custs||[]).forEach(c => { custMap[c.id] = c; });
         }
@@ -438,17 +438,26 @@
         STATE.advances   = advances   || [];
         STATE.custMap    = custMap;
 
-        // ── Fetch Owner Opening Balance ──────────────────────────
+        // ── Fetch Owner Khata Opening/Closing Balance ─────────────
+        // Owner khata is independent from P&L. It changes only via Owner credit sale,
+        // Owner vasooli/payment, Owner advance, or Owner cash advance entries.
         STATE.ownerOpeningBalance = 0;
+        STATE.ownerClosingBalance = 0;
+        STATE.ownerName = 'Owner';
         try {
-          const { data: owner } = await sb.from('customers').select('id, name').eq('category', 'Owner').maybeSingle();
+          const { data: owner } = await sb.from('customers').select('id, name, balance').eq('category', 'Owner').maybeSingle();
           if (owner) {
-            const { data: bal, error: balErr } = await sb.rpc('get_customer_balance_at', { 
-              cust_id: owner.id, 
-              target_date: fromISO 
+            STATE.ownerName = owner.name || 'Owner';
+            const { data: openingBal, error: openErr } = await sb.rpc('get_customer_balance_at', {
+              cust_id: owner.id,
+              target_date: fromISO
             });
-            if (!balErr) STATE.ownerOpeningBalance = parseFloat(bal) || 0;
-            STATE.ownerName = owner.name;
+            if (!openErr) STATE.ownerOpeningBalance = parseFloat(openingBal) || 0;
+            const { data: closingBal, error: closeErr } = await sb.rpc('get_customer_balance_at', {
+              cust_id: owner.id,
+              target_date: toISO
+            });
+            STATE.ownerClosingBalance = closeErr ? (parseFloat(owner.balance)||0) : (parseFloat(closingBal)||0);
           }
         } catch(e) { console.warn('Owner bal error:', e); }
 
@@ -498,24 +507,40 @@
       const a = {
         petrolCash: 0, dieselCash: 0, creditSales: 0, mobilSales: 0,
         vasooli: 0, expenses: 0, advanceOut: 0, pendingAdv: 0,
+        ownerCredit: 0, ownerPayment: 0, ownerAdvanceGiven: 0, ownerAdvanceUsed: 0,
         txnCnt: 0, mobilCnt: 0, expCnt: 0, vCnt: 0
       };
 
       STATE.txns.forEach(t => {
         const v = parseFloat(t.charges) || 0;
+        const cust = STATE.custMap?.[t.customer_id] || {};
+        const isOwnerTxn = (cust.category || '').toLowerCase() === 'owner';
         switch(t.transaction_type) {
           case 'CashSale':
             const ft = (t.fuel_type || '').toLowerCase();
             if (ft === 'diesel') a.dieselCash += v; else a.petrolCash += v;
             a.txnCnt++; break;
-          case 'Credit':  a.creditSales += v; a.txnCnt++; break;
-          case 'Debit':   a.vasooli     += v; a.vCnt++;   break;
+          case 'Credit':
+            a.creditSales += v; a.txnCnt++;
+            if (isOwnerTxn) a.ownerCredit += v;
+            break;
+          case 'AdvanceUsed':
+            a.creditSales += v; a.txnCnt++;
+            if (isOwnerTxn) a.ownerAdvanceUsed += v;
+            break;
+          case 'Debit':
+            a.vasooli += v; a.vCnt++;
+            if (isOwnerTxn) a.ownerPayment += v;
+            break;
           case 'Expense': a.expenses    += v; a.expCnt++; break;
           case 'SalaryPay':
           case 'EmployeeAdvance':
           case 'EmployeeDebit':
             a.expenses += v; a.expCnt++; break;
-          case 'Advance': a.advanceOut  += v; break;
+          case 'Advance':
+            a.advanceOut += v;
+            if (isOwnerTxn) a.ownerAdvanceGiven += v;
+            break;
           case 'BankDeposit':
           case 'BankTransfer':
           case 'BankCredit':
@@ -599,7 +624,7 @@
               <div class="icon-wrap" style="background:${isProfit?'#e8f5e9':'#fdecea'};">${isProfit?'📈':'📉'}</div>
             </div>
             <div class="val ${isProfit?'text-success':'text-danger'}">Rs.${fmt(Math.abs(a.net))}</div>
-            <div class="sub">Sales − Kharche − Advance</div>
+            <div class="sub">Sales − Kharche − Cash Advance</div>
           </div>
         </div>`;
     }
@@ -687,28 +712,32 @@
           <span style="font-size:18px;">${isProfit ? '+' : '−'} Rs.${fmt(Math.abs(a.net))}</span>
         </div>
 
-        <!-- ── Owner Account Carryover ── -->
-        <div class="mt-4 p-3 rounded" style="background: #eff6ff; border: 1px solid #dbeafe;">
-          <h6 class="fw-bold mb-2" style="color:#1e40af; font-size:12px;"><i class="bi bi-person-badge me-1"></i>OWNER ACCOUNT (CARRYOVER)</h6>
+        <!-- ── Owner Khata Check ── -->
+        <div class="mt-4 p-3 rounded" style="background:#eff6ff;border:1px solid #dbeafe;">
+          <h6 class="fw-bold mb-2" style="color:#1e40af;font-size:12px;"><i class="bi bi-person-badge me-1"></i>OWNER KHATA — CREDIT / DEBIT CHECK</h6>
           <div class="d-flex justify-content-between mb-1" style="font-size:13px;">
-            <span>Opening Advance (${fmtDate(getDateRange().fromStr)}):</span>
-            <span class="fw-bold">Rs.${fmt(Math.abs(STATE.ownerOpeningBalance))} ${STATE.ownerOpeningBalance < 0 ? '(Advance)' : '(Udhaar)'}</span>
+            <span>Opening Balance (${fmtDate(getDateRange().fromStr)}):</span>
+            <span class="fw-bold">Rs.${fmt(Math.abs(STATE.ownerOpeningBalance))} ${STATE.ownerOpeningBalance > 0 ? '(Udhaar/Baqi)' : STATE.ownerOpeningBalance < 0 ? '(Advance)' : ''}</span>
           </div>
           <div class="d-flex justify-content-between mb-1" style="font-size:13px;">
-            <span>Is Mahine Ka Net Munafa/Loss:</span>
-            <span class="${isProfit ? 'text-success' : 'text-danger'} fw-bold">${isProfit ? '+' : '−'} Rs.${fmt(Math.abs(a.net))}</span>
+            <span>Owner Credit Sale / Cash Advance:</span>
+            <span class="text-danger fw-bold">+ Rs.${fmt(a.ownerCredit + a.ownerAdvanceGiven)}</span>
           </div>
-          <div class="d-flex justify-content-between pt-2 border-top mt-2" style="font-size:14px; font-weight:800; color:#1e40af;">
-            <span>Next Month Closing Balance:</span>
-            <span>Rs.${fmt(Math.abs(STATE.ownerOpeningBalance - a.net))} ${ (STATE.ownerOpeningBalance - a.net) < 0 ? 'Advance' : 'Udhaar' }</span>
+          <div class="d-flex justify-content-between mb-1" style="font-size:13px;">
+            <span>Owner Payment / Advance Used:</span>
+            <span class="text-success fw-bold">− Rs.${fmt(a.ownerPayment + a.ownerAdvanceUsed)}</span>
           </div>
-          <small class="text-muted d-block mt-2" style="font-size:10px;">* Munafa Owner ke account mein deposit hota hai, jabke kharche aur advances wahan se nikaltay hain.</small>
+          <div class="d-flex justify-content-between pt-2 border-top mt-2" style="font-size:14px;font-weight:800;color:#1e40af;">
+            <span>Closing Owner Khata:</span>
+            <span>Rs.${fmt(Math.abs(STATE.ownerClosingBalance))} ${STATE.ownerClosingBalance > 0 ? 'Udhaar/Baqi' : STATE.ownerClosingBalance < 0 ? 'Advance' : 'Clear'}</span>
+          </div>
+          <small class="text-muted d-block mt-2" style="font-size:10px;">* Owner khata profit se automatic adjust nahi hota. Owner agar profit se cash le to Expense/Owner Drawing record karein. Owner agar udhaar le aur baad mein payment kare to Sale Credit/Cash Advance + Vasooli use karein.</small>
         </div>
 
         <div class="mt-3 p-3 rounded" style="background:#f8f9fa;font-size:12px;color:#666;line-height:1.7;">
           <i class="bi bi-info-circle me-1"></i>
-          <strong>Note:</strong> Vasooli (Rs.${fmt(a.vasooli)}) = udhaar ki payment received — 
-          income mein count nahi ki gayi (double-counting se bachne ke liye). 
+          <strong>Note:</strong> Vasooli (Rs.${fmt(a.vasooli)}) = old udhaar ki payment received — 
+          isey profit se subtract/add nahi kiya gaya, warna double-counting hoti. 
           Pending recovery: <strong style="color:#c0392b;">Rs.${fmt(a.pendingAdv)}</strong> 
           from ${STATE.advances.filter(x=>x.status==='pending').length} advances.
         </div>`;
@@ -724,7 +753,7 @@
         const lbl = d.toLocaleDateString('en-PK', { month: 'long', year: 'numeric' });
         if (!months[key]) months[key] = { lbl, fuel:0, mobil:0, vasooli:0, expenses:0, advances:0 };
         const v = parseFloat(t.charges) || 0;
-        if (t.transaction_type==='CashSale'||t.transaction_type==='Credit') months[key].fuel     += v;
+        if (t.transaction_type==='CashSale'||t.transaction_type==='Credit'||t.transaction_type==='AdvanceUsed') months[key].fuel     += v;
         if (t.transaction_type==='Debit')   months[key].vasooli  += v;
         if (isRealExpenseType(t.transaction_type)) months[key].expenses += v;
         if (t.transaction_type==='Advance') months[key].advances += v;
@@ -791,7 +820,7 @@
         const lbl = d.toLocaleDateString('en-PK', { weekday:'short', day:'2-digit', month:'short', year:'numeric' });
         if (!days[key]) days[key] = { lbl, fuel:0, mobil:0, vasooli:0, expenses:0, advances:0 };
         const v = parseFloat(t.charges) || 0;
-        if (t.transaction_type==='CashSale'||t.transaction_type==='Credit') days[key].fuel     += v;
+        if (t.transaction_type==='CashSale'||t.transaction_type==='Credit'||t.transaction_type==='AdvanceUsed') days[key].fuel     += v;
         if (t.transaction_type==='Debit')   days[key].vasooli  += v;
         if (isRealExpenseType(t.transaction_type)) days[key].expenses += v;
         if (t.transaction_type==='Advance') days[key].advances += v;
@@ -867,9 +896,12 @@
         } else if (isBankMovementType(tt)) {
           // Bank deposit/transfer/credit/payment are balance movements, not P&L lines.
           show = false;
+        } else if (tt === 'AdvanceUsed') {
+          src = 'Advance Used Sale'; srcClass = 'src-credit';
+          typeLabel = 'Sale from Advance'; typeClass = 'src-credit'; isIncome = true;
         } else if (tt === 'Advance') {
-          src = 'Advance'; srcClass = 'src-credit';
-          typeLabel = 'Advance'; typeClass = 'src-credit'; isIncome = false;
+          src = 'Cash Advance Given'; srcClass = 'src-credit';
+          typeLabel = 'Cash Advance'; typeClass = 'src-credit'; isIncome = false;
           show = filter==='all' || filter==='expense';
         }
 
@@ -992,7 +1024,7 @@
         const m   = months6.find(x => x.key===key);
         if (!m) return;
         const v = parseFloat(t.charges) || 0;
-        if (t.transaction_type==='CashSale'||t.transaction_type==='Credit') m.fuel     += v;
+        if (t.transaction_type==='CashSale'||t.transaction_type==='Credit'||t.transaction_type==='AdvanceUsed') m.fuel     += v;
         if (isRealExpenseType(t.transaction_type)||t.transaction_type==='Advance') m.expenses += v;
       });
 

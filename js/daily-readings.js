@@ -369,7 +369,9 @@
 
     // PKT midnight timestamp
     const createdAt = date + 'T00:00:01+05:00';
-    const ownerId = await getOwnerId();
+    // Daily reading cash is business revenue, not Owner khata.
+    // Keep CashSale rows without customer_id so Owner balance does not change automatically.
+    const ownerId = null;
     let totalCashForOwner = 0;
 
     const inserts = [];
@@ -386,7 +388,7 @@
       const liters = parseFloat(Math.max(0, litersRaw - te).toFixed(3));
       const gross  = parseFloat((liters * petrolRate).toFixed(2));
       const cash   = parseFloat((gross - ud).toFixed(2));
-      totalCashForOwner += cash;
+      // Do not add daily cash to Owner khata; P&L reads this CashSale as income.
 
       inserts.push({
         ...(ownerId ? { customer_id: ownerId } : {}),
@@ -425,7 +427,7 @@
       const liters = parseFloat(Math.max(0, litersRaw - te).toFixed(3));
       const gross  = parseFloat((liters * dieselRate).toFixed(2));
       const cash   = parseFloat((gross - ud).toFixed(2));
-      totalCashForOwner += cash;
+      // Do not add daily cash to Owner khata; P&L reads this CashSale as income.
 
       inserts.push({
         ...(ownerId ? { customer_id: ownerId } : {}),
@@ -460,9 +462,9 @@
     try {
       const { error } = await sb.from('transactions').insert(inserts);
       if (error) throw error;
-      if (ownerId && totalCashForOwner) await adjustOwnerCash(totalCashForOwner);
+      // Owner khata is not touched here. CashSale is included in Profit & Loss only.
 
-      showToast('success', 'Saved! ✅', `${inserts.length} machine reading(s) save ho gayi aur Owner/Cash khata update ho gaya!`);
+      showToast('success', 'Saved! ✅', `${inserts.length} machine reading(s) save ho gayi. Daily cash P&L mein count ho gaya; Owner khata change nahi hua.`);
 
       const modal = bootstrap.Modal.getInstance(el('addReadingModal'));
       if (modal) modal.hide();
