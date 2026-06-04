@@ -70,6 +70,8 @@
      STATE
   ═══════════════════════════════════════════════════════════ */
   let _rows        = [];
+  let _creditRows  = [];
+  let _reconMap    = {};
   let _petrolCount = 0;
   let _dieselCount = 0;
 
@@ -85,6 +87,188 @@
       return await window.PetroLedger.adjustCustomerBalance(ownerId, delta);
     }
     return true;
+  }
+
+  // Stock rule for this workflow:
+  // Daily Reading page saves ONLY cash sale stock deduction.
+  // Customer credit liters are entered from Transactions > New Sale and deducted there.
+  // This avoids double-minus when total machine liters include both cash + credit.
+  function splitCashAndCreditLiters(totalLiters, rate, udhaarAmount) {
+    const total = Math.max(0, parseFloat(totalLiters) || 0);
+    const price = parseFloat(rate) || 0;
+    const udhaar = Math.max(0, parseFloat(udhaarAmount) || 0);
+    const creditLiters = price > 0 ? Math.min(total, udhaar / price) : 0;
+    const cashLiters = Math.max(0, total - creditLiters);
+    return {
+      totalLiters: parseFloat(total.toFixed(3)),
+      creditLiters: parseFloat(creditLiters.toFixed(3)),
+      cashLiters: parseFloat(cashLiters.toFixed(3))
+    };
+  }
+
+  function totalLitersForReading(row) {
+    const m = row?.meta || {};
+    return parseFloat(m.total_liters ?? m.liters ?? row?.liters) || 0;
+  }
+
+
+  function rowDate(row) {
+    return row?.created_at ? String(row.created_at).split('T')[0] : '';
+  }
+
+  function reconKey(date, fuel) {
+    return `${date || ''}|${fuel || ''}`;
+  }
+
+  function parseTxnDescription(desc) {
+    try { return JSON.parse(desc || '{}') || {}; } catch (e) { return {}; }
+  }
+
+  function amountForTxn(row) {
+    return parseFloat(row?.charges ?? row?.amount ?? 0) || 0;
+  }
+
+  function litersForCreditTxn(row) {
+    const direct = parseFloat(row?.liters);
+    if (!isNaN(direct) && direct > 0) return direct;
+    const amount = amountForTxn(row);
+    const rate = parseFloat(row?.unit_price) || 0;
+    return rate > 0 ? amount / rate : 0;
+  }
+
+  function expectedCreditLitersForReading(row) {
+    const m = row?.meta || {};
+    const direct = parseFloat(m.credit_liters_machine);
+    if (!isNaN(direct) && direct >= 0) return direct;
+    const udhaar = parseFloat(m.udhaar) || 0;
+    const rate = parseFloat(m.rate || row?.unit_price) || 0;
+    return rate > 0 ? udhaar / rate : 0;
+  }
+
+  function buildCreditReconciliation(readings, creditRows) {
+    const map = {};
+
+    function ensure(date, fuel) {
+      const key = reconKey(date, fuel);
+      if (!map[key]) {
+        map[key] = {
+          key, date, fuel,
+          expectedAmount: 0,
+          expectedLiters: 0,
+          assignedAmount: 0,
+          assignedLiters: 0,
+          readingCount: 0,
+          txnCount: 0,
+          status: 'clear',
+          label: 'Cash Only',
+          amountDiff: 0,
+          litersDiff: 0
+        };
+      }
+      return map[key];
+    }
+
+    (readings || []).forEach(r => {
+      const date = rowDate(r);
+      const fuel = r.fuel_type || r.meta?.fuel_type || '';
+      if (!date || !fuel) return;
+      const bucket = ensure(date, fuel);
+      bucket.expectedAmount += parseFloat(r.meta?.udhaar) || 0;
+      bucket.expectedLiters += expectedCreditLitersForReading(r);
+      bucket.readingCount += 1;
+    });
+
+    (creditRows || []).forEach(t => {
+      const date = rowDate(t);
+      const fuel = t.fuel_type || '';
+      if (!date || !fuel) return;
+      const bucket = ensure(date, fuel);
+      bucket.assignedAmount += amountForTxn(t);
+      bucket.assignedLiters += litersForCreditTxn(t);
+      bucket.txnCount += 1;
+    });
+
+    Object.values(map).forEach(b => {
+      b.expectedAmount = parseFloat(b.expectedAmount.toFixed(2));
+      b.expectedLiters = parseFloat(b.expectedLiters.toFixed(3));
+      b.assignedAmount = parseFloat(b.assignedAmount.toFixed(2));
+      b.assignedLiters = parseFloat(b.assignedLiters.toFixed(3));
+      b.amountDiff = parseFloat((b.expectedAmount - b.assignedAmount).toFixed(2));
+      b.litersDiff = parseFloat((b.expectedLiters - b.assignedLiters).toFixed(3));
+
+      const amountTol = 2; // rupees rounding tolerance
+      const literTol = Math.max(0.1, Math.abs(b.expectedLiters) * 0.001); // 0.1L or 0.1%
+
+      if (b.expectedAmount <= amountTol && b.assignedAmount <= amountTol) {
+        b.status = 'clear'; b.label = 'Cash Only';
+      } else if (b.expectedAmount <= amountTol && b.assignedAmount > amountTol) {
+        b.status = 'unlinked'; b.label = 'Unlinked Credit';
+      } else if (b.assignedAmount <= amountTol) {
+        b.status = 'pending'; b.label = 'Pending Credit';
+      } else if (b.assignedAmount > b.expectedAmount + amountTol || (b.expectedLiters > 0 && b.assignedLiters > b.expectedLiters + literTol)) {
+        b.status = 'over'; b.label = 'Over Credit';
+      } else if (Math.abs(b.amountDiff) <= amountTol && (b.expectedLiters <= 0 || Math.abs(b.litersDiff) <= literTol)) {
+        b.status = 'matched'; b.label = 'Matched';
+      } else {
+        b.status = 'partial'; b.label = 'Partial';
+      }
+    });
+
+    return map;
+  }
+
+  function reconBadge(bucket) {
+    const b = bucket || { status: 'clear', label: 'Cash Only' };
+    const styles = {
+      matched: 'background:#d4edda;color:#155724;',
+      clear: 'background:#e2e3e5;color:#495057;',
+      pending: 'background:#fff3cd;color:#856404;',
+      partial: 'background:#fff3cd;color:#856404;',
+      over: 'background:#f8d7da;color:#721c24;',
+      unlinked: 'background:#cfe2ff;color:#084298;'
+    };
+    const icons = { matched:'✅', clear:'—', pending:'⏳', partial:'⚠️', over:'🚫', unlinked:'🔗' };
+    return `<span class="badge" style="${styles[b.status] || styles.clear}">${icons[b.status] || ''} ${b.label}</span>`;
+  }
+
+  function stockDeductedLitersForReading(row) {
+    const m = row?.meta || {};
+    if (m.stock_mode === 'cash_only_daily_reading') {
+      return parseFloat(m.stock_deducted_liters ?? m.cash_liters ?? row?.liters) || 0;
+    }
+    // Old daily-reading rows did not deduct stock. Do not reverse/double-adjust them.
+    return 0;
+  }
+
+  async function adjustTankStock(fuelType, deltaLiters) {
+    const sb = window.supabaseClient;
+    const delta = parseFloat(deltaLiters) || 0;
+    if (!sb || !fuelType || !delta) return true;
+
+    try {
+      const companyId = window.currentUserProfile?.company_id || null;
+      let q = sb.from('tanks').select('id,current_stock,company_id').eq('fuel_type', fuelType);
+      if (companyId) q = q.eq('company_id', companyId);
+
+      let { data: tank, error } = await q.maybeSingle();
+      if (error && /company_id|schema cache|column/i.test(error.message || '')) {
+        ({ data: tank, error } = await sb.from('tanks').select('id,current_stock').eq('fuel_type', fuelType).maybeSingle());
+      }
+      if (error) throw error;
+      if (!tank?.id) { console.warn('Tank not found for stock adjustment:', fuelType); return false; }
+
+      const current = parseFloat(tank.current_stock) || 0;
+      const next = Math.max(0, parseFloat((current + delta).toFixed(3)));
+      const { error: updError } = await sb
+        .from('tanks')
+        .update({ current_stock: next, last_updated: new Date().toISOString() })
+        .eq('id', tank.id);
+      if (updError) throw updError;
+      return true;
+    } catch (e) {
+      console.warn('Tank stock adjustment skipped:', e.message);
+      return false;
+    }
   }
 
   /* ═══════════════════════════════════════════════════════════
@@ -388,7 +572,9 @@
       const liters = parseFloat(Math.max(0, litersRaw - te).toFixed(3));
       const gross  = parseFloat((liters * petrolRate).toFixed(2));
       const cash   = parseFloat((gross - ud).toFixed(2));
+      const split  = splitCashAndCreditLiters(liters, petrolRate, ud);
       // Do not add daily cash to Owner khata; P&L reads this CashSale as income.
+      // Stock: only cash liters are deducted here; credit liters are deducted from Transactions > New Sale.
 
       inserts.push({
         ...(ownerId ? { customer_id: ownerId } : {}),
@@ -397,12 +583,17 @@
         entry_method:     'machine_reading',
         charges:          cash,
         amount:           cash,
-        liters:           liters,
+        liters:           split.cashLiters,
         unit_price:       petrolRate,
         description:      JSON.stringify({
           machine: i,
           liters_input: litersRaw,
           liters,
+          total_liters: split.totalLiters,
+          cash_liters: split.cashLiters,
+          credit_liters_machine: split.creditLiters,
+          stock_deducted_liters: split.cashLiters,
+          stock_mode: 'cash_only_daily_reading',
           rate:    petrolRate,
           gross,
           udhaar:  ud,
@@ -427,7 +618,9 @@
       const liters = parseFloat(Math.max(0, litersRaw - te).toFixed(3));
       const gross  = parseFloat((liters * dieselRate).toFixed(2));
       const cash   = parseFloat((gross - ud).toFixed(2));
+      const split  = splitCashAndCreditLiters(liters, dieselRate, ud);
       // Do not add daily cash to Owner khata; P&L reads this CashSale as income.
+      // Stock: only cash liters are deducted here; credit liters are deducted from Transactions > New Sale.
 
       inserts.push({
         ...(ownerId ? { customer_id: ownerId } : {}),
@@ -436,12 +629,17 @@
         entry_method:     'machine_reading',
         charges:          cash,
         amount:           cash,
-        liters:           liters,
+        liters:           split.cashLiters,
         unit_price:       dieselRate,
         description:      JSON.stringify({
           machine: i,
           liters_input: litersRaw,
           liters,
+          total_liters: split.totalLiters,
+          cash_liters: split.cashLiters,
+          credit_liters_machine: split.creditLiters,
+          stock_deducted_liters: split.cashLiters,
+          stock_mode: 'cash_only_daily_reading',
           rate:    dieselRate,
           gross,
           udhaar:  ud,
@@ -464,7 +662,18 @@
       if (error) throw error;
       // Owner khata is not touched here. CashSale is included in Profit & Loss only.
 
-      showToast('success', 'Saved! ✅', `${inserts.length} machine reading(s) save ho gayi. Daily cash P&L mein count ho gaya; Owner khata change nahi hua.`);
+      const stockByFuel = inserts.reduce((acc, row) => {
+        let meta = {};
+        try { meta = JSON.parse(row.description || '{}'); } catch(e) {}
+        const l = parseFloat(meta.stock_deducted_liters ?? row.liters) || 0;
+        if (l > 0) acc[row.fuel_type] = (acc[row.fuel_type] || 0) + l;
+        return acc;
+      }, {});
+      for (const [fuel, litersToDeduct] of Object.entries(stockByFuel)) {
+        await adjustTankStock(fuel, -litersToDeduct);
+      }
+
+      showToast('success', 'Saved! ✅', `${inserts.length} machine reading(s) save ho gayi. Cash liters stock se minus ho gaye; credit liters Transactions page se minus honge.`);
 
       const modal = bootstrap.Modal.getInstance(el('addReadingModal'));
       if (modal) modal.hide();
@@ -511,18 +720,18 @@
       const { data: readingsData, error: readingsErr } = await q;
       if (readingsErr) throw readingsErr;
 
-      // Credit transactions (customer udhaar) — same period mein
-      // Yeh summary cards mein "Udhaar Sale (Credit customers)" ke liye hai
+      // Customer non-cash fuel transactions for reconciliation.
+      // Credit + AdvanceUsed dono stock ko transaction page se minus karte hain.
       let creditQ = sb.from('transactions')
-        .select('id, transaction_type, fuel_type, charges, amount')
-        .eq('transaction_type', 'Credit')
+        .select('id, customer_id, transaction_type, fuel_type, charges, amount, liters, unit_price, description, created_at')
+        .in('transaction_type', ['Credit', 'AdvanceUsed'])
         .gte('created_at', from + 'T00:00:00+05:00')
         .lte('created_at', to   + 'T23:59:59+05:00');
 
       if (fuelFilter) creditQ = creditQ.eq('fuel_type', fuelFilter);
 
-      const { data: creditData } = await creditQ;
-      const totalCreditUdhaar = (creditData || []).reduce((sum, t) => sum + (parseFloat(t.charges) || 0), 0);
+      const { data: creditData, error: creditErr } = await creditQ;
+      if (creditErr) console.warn('Credit reconciliation load skipped:', creditErr.message);
 
       // Parse machine readings
       _rows = (readingsData || []).map(r => {
@@ -530,10 +739,12 @@
         try { meta = JSON.parse(r.description || '{}'); } catch(e) {}
         return { ...r, meta };
       });
+      _creditRows = (creditData || []).map(t => ({ ...t, meta: parseTxnDescription(t.description) }));
+      _reconMap = buildCreditReconciliation(_rows, _creditRows);
 
       renderTable();
       renderDailySummary();
-      renderSummaryCards(totalCreditUdhaar);
+      renderSummaryCards();
 
     } catch (e) {
       console.error('DR.load error:', e);
@@ -563,7 +774,7 @@
 
     const html = _rows.map(r => {
       const m      = r.meta;
-      const liters = parseFloat(r.liters) || m.liters  || 0;
+      const liters = totalLitersForReading(r);
       const rate   = parseFloat(r.unit_price) || m.rate || 0;
       const gross  = m.gross  || (liters * rate);
       const udhaar = m.udhaar || 0;
@@ -593,6 +804,7 @@
         <td class="text-end">Rs.${fmt(gross)}</td>
         <td class="text-end text-danger">Rs.${fmt(udhaar)}</td>
         <td class="text-end fw-bold ${cash >= 0 ? 'profit-pos' : 'profit-neg'}">Rs.${fmt(cash)}</td>
+        <td class="text-center">${reconBadge(_reconMap[reconKey(dateStr, r.fuel_type)])}</td>
         <td class="text-center no-print">
           <button class="btn btn-sm btn-outline-danger" onclick="DR.del(${r.id})" title="Delete">
             <i class="bi bi-trash"></i>
@@ -604,12 +816,13 @@
     if (tbody) tbody.innerHTML = html;
     if (el('readings-tfoot')) el('readings-tfoot').innerHTML = `
       <tr class="tfoot-total">
-        <td colspan="5"><strong>TOTAL (${_rows.length} entries)</strong></td>
+        <td colspan="3"><strong>TOTAL (${_rows.length} entries)</strong></td>
         <td class="text-end text-primary fw-bold">${fmtL(totL)} L</td>
         <td></td>
         <td class="text-end fw-bold">Rs.${fmt(totG)}</td>
         <td class="text-end text-danger fw-bold">Rs.${fmt(totU)}</td>
         <td class="text-end fw-bold profit-pos">Rs.${fmt(totC)}</td>
+        <td class="text-center">Credit reconciliation</td>
         <td class="no-print"></td>
       </tr>`;
   }
@@ -621,9 +834,9 @@
     const days = {};
 
     _rows.forEach(r => {
-      const d = r.created_at ? r.created_at.split('T')[0] : '?';
-      if (!days[d]) days[d] = { petrolL: 0, dieselL: 0, petrolCash: 0, dieselCash: 0 };
-      const liters = parseFloat(r.liters) || r.meta.liters || 0;
+      const d = rowDate(r) || '?';
+      if (!days[d]) days[d] = { petrolL: 0, dieselL: 0, petrolCash: 0, dieselCash: 0, expected: 0, assigned: 0, pending: 0, over: 0, statuses: [] };
+      const liters = totalLitersForReading(r);
       const cash   = parseFloat(r.charges) || 0;
 
       if (r.fuel_type === 'Petrol') {
@@ -635,21 +848,35 @@
       }
     });
 
+    Object.values(_reconMap || {}).forEach(b => {
+      const d = b.date || '?';
+      if (!days[d]) days[d] = { petrolL: 0, dieselL: 0, petrolCash: 0, dieselCash: 0, expected: 0, assigned: 0, pending: 0, over: 0, statuses: [] };
+      days[d].expected += b.expectedAmount || 0;
+      days[d].assigned += b.assignedAmount || 0;
+      if ((b.expectedAmount || 0) > (b.assignedAmount || 0)) days[d].pending += (b.expectedAmount - b.assignedAmount);
+      if ((b.assignedAmount || 0) > (b.expectedAmount || 0)) days[d].over += (b.assignedAmount - b.expectedAmount);
+      days[d].statuses.push(b.status);
+    });
+
     const tbody = el('daily-tbody');
     const keys  = Object.keys(days).sort().reverse();
 
     if (!keys.length) {
-      if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="text-center py-3 text-muted">Koi data nahi</td></tr>';
+      if (tbody) tbody.innerHTML = '<tr><td colspan="9" class="text-center py-3 text-muted">Koi data nahi</td></tr>';
       return;
+    }
+
+    function dayBadge(day) {
+      if (day.statuses.includes('over')) return reconBadge({status:'over', label:'Over Credit'});
+      if (day.statuses.includes('unlinked')) return reconBadge({status:'unlinked', label:'Unlinked Credit'});
+      if (day.statuses.includes('pending') || day.statuses.includes('partial')) return reconBadge({status:'partial', label:'Credit Pending'});
+      if (day.statuses.includes('matched')) return reconBadge({status:'matched', label:'Matched'});
+      return reconBadge({status:'clear', label:'Cash Only'});
     }
 
     if (tbody) tbody.innerHTML = keys.map(d => {
       const day   = days[d];
       const total = day.petrolCash + day.dieselCash;
-      const badge = total >= 0
-        ? '<span class="badge" style="background:#d4edda;color:#155724;">✅ OK</span>'
-        : '<span class="badge" style="background:#f8d7da;color:#721c24;">⚠ Check</span>';
-
       return `<tr>
         <td><strong>${fmtD(d)}</strong></td>
         <td class="text-end text-success">${fmtL(day.petrolL)} L</td>
@@ -657,7 +884,9 @@
         <td class="text-end text-success">Rs.${fmt(day.petrolCash)}</td>
         <td class="text-end" style="color:#856404">Rs.${fmt(day.dieselCash)}</td>
         <td class="text-end fw-bold ${total >= 0 ? 'profit-pos' : 'profit-neg'}">Rs.${fmt(total)}</td>
-        <td class="text-center">${badge}</td>
+        <td class="text-end text-danger">Rs.${fmt(day.expected)}</td>
+        <td class="text-end text-primary">Rs.${fmt(day.assigned)}</td>
+        <td class="text-center">${dayBadge(day)}</td>
       </tr>`;
     }).join('');
   }
@@ -671,36 +900,37 @@
        TOTAL LITERS   = liters field
      Plus info note agar credit transactions bhi hain is period mein
   ═══════════════════════════════════════════════════════════ */
-  function renderSummaryCards(totalCreditUdhaar) {
+  function renderSummaryCards() {
     let totL = 0, totG = 0, totU = 0, totC = 0;
 
     _rows.forEach(r => {
-      totL += parseFloat(r.liters) || r.meta.liters  || 0;
+      totL += totalLitersForReading(r);
       totG += r.meta.gross         || 0;
       totU += r.meta.udhaar        || 0;
       totC += parseFloat(r.charges) || 0;
     });
 
+    const assignedCredit = Object.values(_reconMap || {}).reduce((sum, b) => sum + (b.assignedAmount || 0), 0);
+    const pendingCredit  = Object.values(_reconMap || {}).reduce((sum, b) => sum + Math.max(0, (b.expectedAmount || 0) - (b.assignedAmount || 0)), 0);
+    const overCredit     = Object.values(_reconMap || {}).reduce((sum, b) => sum + Math.max(0, (b.assignedAmount || 0) - (b.expectedAmount || 0)), 0);
+
     if (el('sum-cash'))   el('sum-cash').textContent   = 'Rs. ' + fmt(totC);
     if (el('sum-liters')) el('sum-liters').textContent = fmtL(totL) + ' L';
     if (el('sum-gross'))  el('sum-gross').textContent  = 'Rs. ' + fmt(totG);
 
-    // Udhaar card: machine reading ka udhaar + credit transactions ka udhaar
-    const totalUdhaar = totU + totalCreditUdhaar;
-    if (el('sum-udhaar')) el('sum-udhaar').textContent = 'Rs. ' + fmt(totalUdhaar);
+    // IMPORTANT: Udhaar card daily reading ka credit amount dikhata hai.
+    // Customer-wise assigned credit note ke taur par show hota hai, double count nahi hota.
+    if (el('sum-udhaar')) el('sum-udhaar').textContent = 'Rs. ' + fmt(totU);
 
-    // Hint: agar credit transactions bhi hain to note karo
     const udhaarCard = el('sum-udhaar')?.closest('.s-card');
     if (udhaarCard) {
       const existingNote = udhaarCard.querySelector('.udhaar-note');
       if (existingNote) existingNote.remove();
-      if (totalCreditUdhaar > 0) {
-        const note = document.createElement('small');
-        note.className = 'text-muted udhaar-note d-block mt-1';
-        note.style.fontSize = '10px';
-        note.innerHTML = `Machine: Rs.${fmt(totU)}<br>Txn page: Rs.${fmt(totalCreditUdhaar)}`;
-        udhaarCard.appendChild(note);
-      }
+      const note = document.createElement('small');
+      note.className = 'text-muted udhaar-note d-block mt-1';
+      note.style.fontSize = '10px';
+      note.innerHTML = `Customer assigned: Rs.${fmt(assignedCredit)}<br>${pendingCredit > 0 ? 'Pending: Rs.' + fmt(pendingCredit) : overCredit > 0 ? 'Over: Rs.' + fmt(overCredit) : 'Matched / clear'}`;
+      udhaarCard.appendChild(note);
     }
   }
 
@@ -715,7 +945,7 @@
     el('edit-txn-id').value  = id;
     el('edit-date').value    = r.created_at ? r.created_at.split('T')[0] : '';
     el('edit-rate').value    = parseFloat(r.unit_price) || m.rate    || 0;
-    el('edit-liters').value  = m.liters_input || m.liters || 0;
+    el('edit-liters').value  = m.liters_input || m.total_liters || m.liters || 0;
     el('edit-udhaar').value  = m.udhaar  || 0;
     el('edit-testing').value = m.testing || 0;
 
@@ -755,6 +985,7 @@
     const li   = parseFloat(Math.max(0, liInput - te).toFixed(3));
     const gr   = parseFloat((li * pr).toFixed(2));
     const cash = parseFloat((gr - ud).toFixed(2));
+    const split = splitCashAndCreditLiters(li, pr, ud);
 
     const orig     = _rows.find(r => r.id === id);
     const origMeta = orig?.meta || {};
@@ -762,7 +993,13 @@
     const newMeta = {
       ...origMeta,
       liters_input: liInput,
-      liters: li, rate: pr,
+      liters: li,
+      total_liters: split.totalLiters,
+      cash_liters: split.cashLiters,
+      credit_liters_machine: split.creditLiters,
+      stock_deducted_liters: split.cashLiters,
+      stock_mode: 'cash_only_daily_reading',
+      rate: pr,
       gross: gr, udhaar: ud, testing: te
     };
 
@@ -770,18 +1007,18 @@
       const { error } = await sb.from('transactions').update({
         charges:    cash,
         amount:     cash,
-        liters:     li,
+        liters:     split.cashLiters,
         unit_price: pr,
         description: JSON.stringify(newMeta),
         ...(date ? { created_at: date + 'T00:00:01+05:00' } : {})
       }).eq('id', id);
 
       if (error) throw error;
-      const oldCash = parseFloat(orig?.charges ?? orig?.amount) || 0;
-      const diff = cash - oldCash;
-      if (diff) await adjustOwnerCash(diff);
+      const oldStockDeducted = stockDeductedLitersForReading(orig);
+      const stockDelta = oldStockDeducted - split.cashLiters;
+      if (stockDelta) await adjustTankStock(orig?.fuel_type || newMeta.fuel_type, stockDelta);
 
-      showToast('success', 'Updated ✅', 'Reading update ho gayi aur Owner/Cash khata adjust ho gaya');
+      showToast('success', 'Updated ✅', 'Reading update ho gayi aur stock cash liters ke mutabiq adjust ho gaya');
       bootstrap.Modal.getInstance(el('editReadingModal'))?.hide();
       DR.load();
 
@@ -794,15 +1031,15 @@
      DELETE
   ═══════════════════════════════════════════════════════════ */
   DR.del = async function(id) {
-    if (!confirm('Yeh reading delete karein? Owner/Cash khata bhi reverse ho jayega.')) return;
+    if (!confirm('Yeh reading delete karein? Is reading ka deducted cash stock wapas add ho jayega.')) return;
     const sb = window.supabaseClient;
     try {
       const existing = _rows.find(r => String(r.id) === String(id));
-      const oldCash = parseFloat(existing?.charges ?? existing?.amount) || 0;
+      const oldStockDeducted = stockDeductedLitersForReading(existing);
       const { error } = await sb.from('transactions').delete().eq('id', id);
       if (error) throw error;
-      if (oldCash) await adjustOwnerCash(-oldCash);
-      showToast('success', 'Deleted', 'Reading delete ho gayi aur Owner/Cash khata reverse ho gaya');
+      if (oldStockDeducted) await adjustTankStock(existing?.fuel_type, oldStockDeducted);
+      showToast('success', 'Deleted', 'Reading delete ho gayi aur deducted cash stock wapas add ho gaya');
       DR.load();
     } catch (e) {
       showToast('danger', 'Delete Error', e.message);

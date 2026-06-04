@@ -111,6 +111,117 @@
     }catch(e){ console.warn('Stock deduction skipped:', e.message); }
   }
 
+
+  function _txDate(row){ return row?.created_at ? String(row.created_at).split('T')[0] : ''; }
+  function _safeMeta(desc){ try { return JSON.parse(desc || '{}') || {}; } catch(e){ return {}; } }
+  function _money(row){ return parseFloat(row?.charges ?? row?.amount ?? 0) || 0; }
+  function _liters(row){
+    const direct = parseFloat(row?.liters);
+    if(!isNaN(direct) && direct > 0) return direct;
+    const rate = parseFloat(row?.unit_price) || 0;
+    return rate > 0 ? _money(row) / rate : 0;
+  }
+
+  async function getDailyCreditBucket(saleDate, fuelType){
+    const bucket = {
+      date: saleDate,
+      fuel: fuelType,
+      expectedAmount: 0,
+      expectedLiters: 0,
+      assignedAmount: 0,
+      assignedLiters: 0,
+      readingCount: 0,
+      txnCount: 0
+    };
+    if(!saleDate || !fuelType) return bucket;
+
+    const start = saleDate + 'T00:00:00+05:00';
+    const end   = saleDate + 'T23:59:59+05:00';
+
+    try{
+      let dailyQ = supabase.from('transactions')
+        .select('id, transaction_type, entry_method, fuel_type, charges, amount, liters, unit_price, description, created_at')
+        .eq('transaction_type', 'CashSale')
+        .eq('entry_method', 'machine_reading')
+        .eq('fuel_type', fuelType)
+        .gte('created_at', start)
+        .lte('created_at', end);
+      const {data: readings, error: readErr} = await dailyQ;
+      if(readErr) throw readErr;
+
+      (readings || []).forEach(r => {
+        const m = _safeMeta(r.description);
+        const udhaar = parseFloat(m.udhaar) || 0;
+        const rate = parseFloat(m.rate || r.unit_price) || 0;
+        const creditLiters = parseFloat(m.credit_liters_machine) || (rate > 0 ? udhaar / rate : 0);
+        bucket.expectedAmount += udhaar;
+        bucket.expectedLiters += creditLiters;
+        bucket.readingCount += 1;
+      });
+
+      const {data: txns, error: txErr} = await supabase.from('transactions')
+        .select('id, transaction_type, fuel_type, charges, amount, liters, unit_price, description, created_at')
+        .in('transaction_type', ['Credit','AdvanceUsed'])
+        .eq('fuel_type', fuelType)
+        .gte('created_at', start)
+        .lte('created_at', end);
+      if(txErr) throw txErr;
+
+      (txns || []).forEach(t => {
+        bucket.assignedAmount += _money(t);
+        bucket.assignedLiters += _liters(t);
+        bucket.txnCount += 1;
+      });
+
+      bucket.expectedAmount = parseFloat(bucket.expectedAmount.toFixed(2));
+      bucket.expectedLiters = parseFloat(bucket.expectedLiters.toFixed(3));
+      bucket.assignedAmount = parseFloat(bucket.assignedAmount.toFixed(2));
+      bucket.assignedLiters = parseFloat(bucket.assignedLiters.toFixed(3));
+      return bucket;
+    }catch(e){
+      console.warn('Daily credit reconciliation check skipped:', e.message);
+      // If check fails because of old schema/network, do not block normal work.
+      return bucket;
+    }
+  }
+
+  async function validateCreditAgainstDailyReading({ saleDate, fuelType, amountToAdd, litersToAdd }){
+    const amount = parseFloat(amountToAdd) || 0;
+    const liters = parseFloat(litersToAdd) || 0;
+    if(!amount || !liters) return true;
+
+    const b = await getDailyCreditBucket(saleDate, fuelType);
+    const amountTol = 2;
+    const literTol = Math.max(0.1, Math.abs(b.expectedLiters) * 0.001);
+
+    if(b.expectedAmount <= amountTol){
+      return confirm(
+        `Daily Reading me ${saleDate} / ${fuelType} ka credit amount nahi mila.\n\n` +
+        `Ye credit sale UNLINKED save hogi aur stock se ${liters.toFixed(3)} L minus hoga.\n\n` +
+        `Agar ye sale daily reading me already included hai to pehle daily reading me credit amount add karein. Continue?`
+      );
+    }
+
+    const nextAmount = b.assignedAmount + amount;
+    const nextLiters = b.assignedLiters + liters;
+    const overAmount = nextAmount - b.expectedAmount;
+    const overLiters = nextLiters - b.expectedLiters;
+
+    if(overAmount > amountTol || (b.expectedLiters > 0 && overLiters > literTol)){
+      alert(
+        `Credit sale daily reading se zyada ho rahi hai. Save block kar diya gaya.\n\n` +
+        `Date/Fuel: ${saleDate} / ${fuelType}\n` +
+        `Daily credit expected: Rs.${fmt(b.expectedAmount)} (${b.expectedLiters.toFixed(3)} L)\n` +
+        `Already assigned: Rs.${fmt(b.assignedAmount)} (${b.assignedLiters.toFixed(3)} L)\n` +
+        `New entry: Rs.${fmt(amount)} (${liters.toFixed(3)} L)\n\n` +
+        `Pehle daily reading ka credit amount check karein ya transaction liters/amount correct karein.`
+      );
+      return false;
+    }
+
+    return true;
+  }
+
   function showToast(type, title, msg) {
     const t = el('liveToast');
     if(!t) { alert(title+': '+msg); return; }
@@ -737,10 +848,21 @@ ${bodyHtml}
     const saleDate=el('sale-date')?.value || new Date().toISOString().split('T')[0];
     if(!fuelType){ alert('Fuel type select karein'); return; }
     if(!amount){ alert('Amount enter karein'); return; }
+    if(!liters || liters <= 0){ alert('Stock manage karne ke liye liters enter karna zaroori hai'); return; }
     if(!saleDate){ alert('Taareekh (date) enter karein'); return; }
     try{
       const oldBal=parseFloat(cust.balance)||0;
       const createdAt = new Date(saleDate + 'T12:00:00').toISOString();
+
+      if(paymentType !== 'cash'){
+        const okDailyCredit = await validateCreditAgainstDailyReading({
+          saleDate,
+          fuelType,
+          amountToAdd: amount,
+          litersToAdd: liters
+        });
+        if(!okDailyCredit) return;
+      }
 
       // balance < 0 means customer already has advance/Jama deposited with pump.
       // Fuel taken from this advance is saved as AdvanceUsed, not Credit/Udhaar.
