@@ -1,0 +1,13 @@
+Daily Reading Cash in Hand Update
+
+Change:
+- Daily Reading form now asks for Cash in Hand instead of manual Credit/Udhaar amount.
+- Credit/Udhaar is auto calculated as: Gross Sale - Cash in Hand.
+- Existing old data is not changed.
+- New rows still store computed udhaar in transaction description so credit reconciliation with Transactions > New Sale continues to work.
+- No new database table/column is required for this update.
+
+Stock rule remains same:
+- Daily Reading deducts only cash liters from stock.
+- Customer credit liters are deducted when saved from Transactions > New Sale.
+- This prevents double stock deduction.

@@ -26,8 +26,8 @@
  * ─── SUMMARY CARDS LOGIC ─────────────────────────────────────────
  *   Machine Reading page pe summary cards:
  *     GROSS REVENUE  = sum of (liters * rate) for all CashSale readings
- *     UDHAAR SALE    = sum of udhaar stored in description JSON
- *     CASH SALE (NET) = sum of charges (gross - udhaar)
+ *     CREDIT / UDHAAR AUTO = sum of auto credit stored in description JSON
+ *     CASH IN HAND (NET) = sum of charges (cash in hand sale amount)
  *     TOTAL LITERS   = sum of liters field
  *
  *   NOTE: Customer Credit transactions (jab transaction page pe sale enter
@@ -104,6 +104,25 @@
       creditLiters: parseFloat(creditLiters.toFixed(3)),
       cashLiters: parseFloat(cashLiters.toFixed(3))
     };
+  }
+
+  // New workflow requested by user:
+  // Daily Reading me Credit amount type nahi karna. Operator total liters + actual
+  // Cash in Hand enter karega. Credit/Udhaar automatically calculate hoga:
+  // Credit = Gross Sale - Cash in Hand. Old saved data untouched rahega because
+  // purani rows description.meta.udhaar se render hoti rahengi.
+  function calcFromCashInHand(totalLiters, rate, cashInputRaw) {
+    const total = Math.max(0, parseFloat(totalLiters) || 0);
+    const price = Math.max(0, parseFloat(rate) || 0);
+    const gross = parseFloat((total * price).toFixed(2));
+
+    const raw = cashInputRaw == null ? '' : String(cashInputRaw).trim();
+    // Blank field ka matlab: full cash sale. Agar actual zero cash ho to 0 type karein.
+    const entered = raw === '' ? gross : Math.max(0, parseFloat(raw) || 0);
+    const cash = parseFloat(Math.min(gross, entered).toFixed(2));
+    const credit = parseFloat(Math.max(0, gross - cash).toFixed(2));
+    const overCash = parseFloat(Math.max(0, entered - gross).toFixed(2));
+    return { gross, cash, credit, entered, overCash };
   }
 
   function totalLitersForReading(row) {
@@ -405,10 +424,11 @@
             </div>
             <div class="col-md-4">
               <label class="form-label small fw-semibold">
-                Udhaar Sale (Rs)
+                Cash in Hand (Rs)
               </label>
               <input type="number" id="${prefix}-ud-${num}" class="form-control"
-                step="0.01" placeholder="0.00" oninput="DR.calcMachine('${fuel}',${num})">
+                step="0.01" placeholder="Blank = full cash" oninput="DR.calcMachine('${fuel}',${num})">
+              <small class="text-muted">Credit auto: Gross - Cash in Hand</small>
             </div>
             <div class="col-md-4">
               <label class="form-label small fw-semibold">Testing (L)</label>
@@ -455,13 +475,15 @@
     const cls = fuel.toLowerCase();
 
     const litersInput = parseFloat(el(`${p}-li-${num}`)?.value) || 0;
-    const ud = parseFloat(el(`${p}-ud-${num}`)?.value) || 0;
+    const cashRaw = el(`${p}-ud-${num}`)?.value ?? '';
     const te = parseFloat(el(`${p}-te-${num}`)?.value) || 0;
     const pr = parseFloat(el(fuel === 'Petrol' ? 'add-petrol-price' : 'add-diesel-price')?.value) || 0;
 
     const liters = Math.max(0, litersInput - te);
-    const gross  = liters * pr;
-    const cash   = gross - ud;
+    const calc = calcFromCashInHand(liters, pr, cashRaw);
+    const gross = calc.gross;
+    const cash = calc.cash;
+    const ud = calc.credit;
 
     const badge = el(`calc-${cls}-${num}`);
     if (!badge) return;
@@ -477,11 +499,11 @@
           <div class="fw-bold">Rs.${fmt(gross)}</div>
         </div>
         <div class="col-3">
-          <div class="small text-muted">Udhaar (−)</div>
+          <div class="small text-muted">Credit Auto (−)</div>
           <div class="fw-bold text-danger">Rs.${fmt(ud)}</div>
         </div>
         <div class="col-3">
-          <div class="small text-muted">✅ Cash Sale</div>
+          <div class="small text-muted">✅ Cash in Hand</div>
           <div class="fw-bold ${cash >= 0 ? 'profit-pos' : 'profit-neg'}">Rs.${fmt(cash)}</div>
         </div>
       </div>`;
@@ -500,20 +522,22 @@
     for (let i = 1; i <= _petrolCount; i++) {
       if (!el(`p-li-${i}`)) continue;
       const liInput = parseFloat(el(`p-li-${i}`)?.value) || 0;
-      const ud = parseFloat(el(`p-ud-${i}`)?.value) || 0;
+      const cashRaw = el(`p-ud-${i}`)?.value ?? '';
       const te = parseFloat(el(`p-te-${i}`)?.value) || 0;
       const pr = parseFloat(el('add-petrol-price')?.value) || 0;
       const li = Math.max(0, liInput - te);
-      totL += li; totG += li * pr; totC += (li * pr) - ud;
+      const calc = calcFromCashInHand(li, pr, cashRaw);
+      totL += li; totG += calc.gross; totC += calc.cash;
     }
     for (let i = 1; i <= _dieselCount; i++) {
       if (!el(`d-li-${i}`)) continue;
       const liInput = parseFloat(el(`d-li-${i}`)?.value) || 0;
-      const ud = parseFloat(el(`d-ud-${i}`)?.value) || 0;
+      const cashRaw = el(`d-ud-${i}`)?.value ?? '';
       const te = parseFloat(el(`d-te-${i}`)?.value) || 0;
       const pr = parseFloat(el('add-diesel-price')?.value) || 0;
       const li = Math.max(0, liInput - te);
-      totL += li; totG += li * pr; totC += (li * pr) - ud;
+      const calc = calcFromCashInHand(li, pr, cashRaw);
+      totL += li; totG += calc.gross; totC += calc.cash;
     }
 
     const gtBox = el('grand-total-box');
@@ -568,10 +592,12 @@
       if (isNaN(litersRaw) || litersRaw <= 0) continue;
 
       const te    = parseFloat(el(`p-te-${i}`)?.value) || 0;
-      const ud    = parseFloat(el(`p-ud-${i}`)?.value) || 0;
+      const cashRaw = el(`p-ud-${i}`)?.value ?? '';
       const liters = parseFloat(Math.max(0, litersRaw - te).toFixed(3));
-      const gross  = parseFloat((liters * petrolRate).toFixed(2));
-      const cash   = parseFloat((gross - ud).toFixed(2));
+      const calc = calcFromCashInHand(liters, petrolRate, cashRaw);
+      const gross = calc.gross;
+      const cash = calc.cash;
+      const ud = calc.credit;
       const split  = splitCashAndCreditLiters(liters, petrolRate, ud);
       // Do not add daily cash to Owner khata; P&L reads this CashSale as income.
       // Stock: only cash liters are deducted here; credit liters are deducted from Transactions > New Sale.
@@ -597,6 +623,9 @@
           rate:    petrolRate,
           gross,
           udhaar:  ud,
+          cash_in_hand: cash,
+          cash_in_hand_entered: calc.entered,
+          cash_input_mode: 'cash_in_hand_auto_credit',
           testing: te,
           notes
         }),
@@ -614,10 +643,12 @@
       if (isNaN(litersRaw) || litersRaw <= 0) continue;
 
       const te    = parseFloat(el(`d-te-${i}`)?.value) || 0;
-      const ud    = parseFloat(el(`d-ud-${i}`)?.value) || 0;
+      const cashRaw = el(`d-ud-${i}`)?.value ?? '';
       const liters = parseFloat(Math.max(0, litersRaw - te).toFixed(3));
-      const gross  = parseFloat((liters * dieselRate).toFixed(2));
-      const cash   = parseFloat((gross - ud).toFixed(2));
+      const calc = calcFromCashInHand(liters, dieselRate, cashRaw);
+      const gross = calc.gross;
+      const cash = calc.cash;
+      const ud = calc.credit;
       const split  = splitCashAndCreditLiters(liters, dieselRate, ud);
       // Do not add daily cash to Owner khata; P&L reads this CashSale as income.
       // Stock: only cash liters are deducted here; credit liters are deducted from Transactions > New Sale.
@@ -643,6 +674,9 @@
           rate:    dieselRate,
           gross,
           udhaar:  ud,
+          cash_in_hand: cash,
+          cash_in_hand_entered: calc.entered,
+          cash_input_mode: 'cash_in_hand_auto_credit',
           testing: te,
           notes
         }),
@@ -673,7 +707,7 @@
         await adjustTankStock(fuel, -litersToDeduct);
       }
 
-      showToast('success', 'Saved! ✅', `${inserts.length} machine reading(s) save ho gayi. Cash liters stock se minus ho gaye; credit liters Transactions page se minus honge.`);
+      showToast('success', 'Saved! ✅', `${inserts.length} machine reading(s) save ho gayi. Cash in hand ke mutabiq cash liters stock se minus ho gaye; auto credit liters Transactions page se minus honge.`);
 
       const modal = bootstrap.Modal.getInstance(el('addReadingModal'));
       if (modal) modal.hide();
@@ -895,8 +929,8 @@
      RENDER SUMMARY CARDS
      Machine readings se:
        GROSS REVENUE  = liters * rate
-       UDHAAR (machine) = jo reading mein darj kiya
-       CASH SALE NET  = gross - udhaar
+       CREDIT AUTO (machine) = Gross Sale - Cash in Hand
+       CASH IN HAND NET  = cash amount entered/capped by gross
        TOTAL LITERS   = liters field
      Plus info note agar credit transactions bhi hain is period mein
   ═══════════════════════════════════════════════════════════ */
@@ -918,7 +952,7 @@
     if (el('sum-liters')) el('sum-liters').textContent = fmtL(totL) + ' L';
     if (el('sum-gross'))  el('sum-gross').textContent  = 'Rs. ' + fmt(totG);
 
-    // IMPORTANT: Udhaar card daily reading ka credit amount dikhata hai.
+    // IMPORTANT: Credit card daily reading ka auto credit amount dikhata hai.
     // Customer-wise assigned credit note ke taur par show hota hai, double count nahi hota.
     if (el('sum-udhaar')) el('sum-udhaar').textContent = 'Rs. ' + fmt(totU);
 
@@ -946,7 +980,7 @@
     el('edit-date').value    = r.created_at ? r.created_at.split('T')[0] : '';
     el('edit-rate').value    = parseFloat(r.unit_price) || m.rate    || 0;
     el('edit-liters').value  = m.liters_input || m.total_liters || m.liters || 0;
-    el('edit-udhaar').value  = m.udhaar  || 0;
+    el('edit-udhaar').value  = m.cash_in_hand ?? r.charges ?? Math.max(0, (m.gross || 0) - (m.udhaar || 0));
     el('edit-testing').value = m.testing || 0;
 
     DR.calcEditBadge();
@@ -955,20 +989,22 @@
 
   DR.calcEditBadge = function() {
     const liInput = parseFloat(el('edit-liters')?.value) || 0;
-    const ud = parseFloat(el('edit-udhaar')?.value)  || 0;
+    const cashRaw = el('edit-udhaar')?.value ?? '';
     const te = parseFloat(el('edit-testing')?.value) || 0;
     const pr = parseFloat(el('edit-rate')?.value)    || 0;
 
     const li = Math.max(0, liInput - te);
-    const gr = li * pr;
-    const ca = gr - ud;
+    const calc = calcFromCashInHand(li, pr, cashRaw);
+    const gr = calc.gross;
+    const ca = calc.cash;
+    const ud = calc.credit;
 
     const badge = el('edit-calc-badge');
     if (badge) badge.innerHTML = `
       <strong>${fmtL(li)} L</strong> bika &nbsp;|&nbsp;
       Gross: <strong>Rs.${fmt(gr)}</strong> &nbsp;|&nbsp;
-      Udhaar: <span class="text-danger">Rs.${fmt(ud)}</span> &nbsp;|&nbsp;
-      <strong class="${ca >= 0 ? 'profit-pos' : 'profit-neg'}">Cash Sale: Rs.${fmt(ca)}</strong>`;
+      Cash in Hand: <strong class="${ca >= 0 ? 'profit-pos' : 'profit-neg'}">Rs.${fmt(ca)}</strong> &nbsp;|&nbsp;
+      Auto Credit: <span class="text-danger">Rs.${fmt(ud)}</span>`;
   };
 
   DR.update = async function() {
@@ -977,14 +1013,16 @@
     if (!sb || !id) return;
 
     const liInput = parseFloat(el('edit-liters')?.value) || 0;
-    const ud = parseFloat(el('edit-udhaar')?.value)  || 0;
+    const cashRaw = el('edit-udhaar')?.value ?? '';
     const te = parseFloat(el('edit-testing')?.value) || 0;
     const pr = parseFloat(el('edit-rate')?.value)    || 0;
     const date = el('edit-date')?.value;
 
     const li   = parseFloat(Math.max(0, liInput - te).toFixed(3));
-    const gr   = parseFloat((li * pr).toFixed(2));
-    const cash = parseFloat((gr - ud).toFixed(2));
+    const calc = calcFromCashInHand(li, pr, cashRaw);
+    const gr = calc.gross;
+    const cash = calc.cash;
+    const ud = calc.credit;
     const split = splitCashAndCreditLiters(li, pr, ud);
 
     const orig     = _rows.find(r => r.id === id);
@@ -1000,7 +1038,7 @@
       stock_deducted_liters: split.cashLiters,
       stock_mode: 'cash_only_daily_reading',
       rate: pr,
-      gross: gr, udhaar: ud, testing: te
+      gross: gr, udhaar: ud, cash_in_hand: cash, cash_in_hand_entered: calc.entered, cash_input_mode: 'cash_in_hand_auto_credit', testing: te
     };
 
     try {
@@ -1018,7 +1056,7 @@
       const stockDelta = oldStockDeducted - split.cashLiters;
       if (stockDelta) await adjustTankStock(orig?.fuel_type || newMeta.fuel_type, stockDelta);
 
-      showToast('success', 'Updated ✅', 'Reading update ho gayi aur stock cash liters ke mutabiq adjust ho gaya');
+      showToast('success', 'Updated ✅', 'Reading update ho gayi aur stock cash-in-hand liters ke mutabiq adjust ho gaya');
       bootstrap.Modal.getInstance(el('editReadingModal'))?.hide();
       DR.load();
 
