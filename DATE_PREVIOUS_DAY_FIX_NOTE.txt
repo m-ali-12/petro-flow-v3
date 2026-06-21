@@ -1,0 +1,6 @@
+Daily Reading date fix:
+- Fixed one-day-back issue caused by Supabase timestamptz UTC conversion.
+- Existing old data is not changed.
+- New Daily Reading records save at Pakistan business-date noon (+05:00) so selected date remains same.
+- Display now converts created_at to Asia/Karachi business date instead of using split('T')[0].
+- No SQL required.

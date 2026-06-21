@@ -53,6 +53,35 @@
     } catch(e) { return d; }
   };
 
+  // Business date must stay Pakistan/local date.
+  // Supabase stores timestamptz in UTC; if we save 2026-06-21T00:00:01+05:00,
+  // it returns as 2026-06-20T19:00:01Z and simple split('T')[0] shows previous day.
+  // These helpers prevent the one-day-back issue without changing old data.
+  const BUSINESS_TZ = 'Asia/Karachi';
+
+  function partsYMD(dateObj) {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: BUSINESS_TZ, year: 'numeric', month: '2-digit', day: '2-digit'
+    }).formatToParts(dateObj).reduce((a, p) => { a[p.type] = p.value; return a; }, {});
+    return `${parts.year}-${parts.month}-${parts.day}`;
+  }
+
+  function todayYMD() {
+    return partsYMD(new Date());
+  }
+
+  function businessDateFromTimestamp(ts) {
+    if (!ts) return '';
+    // Date-only strings are already business dates.
+    if (/^\d{4}-\d{2}-\d{2}$/.test(String(ts))) return String(ts);
+    try { return partsYMD(new Date(ts)); } catch(e) { return String(ts).split('T')[0] || ''; }
+  }
+
+  function businessTimestamp(dateStr) {
+    // Noon PKT keeps the same date even on pages that still use split('T')[0].
+    return dateStr ? `${dateStr}T12:00:00+05:00` : null;
+  }
+
   function showToast(type, title, msg) {
     const t = el('liveToast');
     if (!t) { alert(title + ': ' + msg); return; }
@@ -132,7 +161,7 @@
 
 
   function rowDate(row) {
-    return row?.created_at ? String(row.created_at).split('T')[0] : '';
+    return businessDateFromTimestamp(row?.created_at);
   }
 
   function reconKey(date, fuel) {
@@ -576,7 +605,7 @@
     } catch(e) { /* auth optional */ }
 
     // PKT midnight timestamp
-    const createdAt = date + 'T00:00:01+05:00';
+    const createdAt = businessTimestamp(date);
     // Daily reading cash is business revenue, not Owner khata.
     // Keep CashSale rows without customer_id so Owner balance does not change automatically.
     const ownerId = null;
@@ -813,7 +842,7 @@
       const gross  = m.gross  || (liters * rate);
       const udhaar = m.udhaar || 0;
       const cash   = parseFloat(r.charges) || 0;
-      const dateStr = r.created_at ? r.created_at.split('T')[0] : '';
+      const dateStr = rowDate(r);
 
       totL += liters; totG += gross; totU += udhaar; totC += cash;
 
@@ -977,7 +1006,7 @@
     const m = r.meta;
 
     el('edit-txn-id').value  = id;
-    el('edit-date').value    = r.created_at ? r.created_at.split('T')[0] : '';
+    el('edit-date').value    = rowDate(r);
     el('edit-rate').value    = parseFloat(r.unit_price) || m.rate    || 0;
     el('edit-liters').value  = m.liters_input || m.total_liters || m.liters || 0;
     el('edit-udhaar').value  = m.cash_in_hand ?? r.charges ?? Math.max(0, (m.gross || 0) - (m.udhaar || 0));
@@ -1048,7 +1077,7 @@
         liters:     split.cashLiters,
         unit_price: pr,
         description: JSON.stringify(newMeta),
-        ...(date ? { created_at: date + 'T00:00:01+05:00' } : {})
+        ...(date ? { created_at: businessTimestamp(date) } : {})
       }).eq('id', id);
 
       if (error) throw error;
@@ -1097,7 +1126,7 @@
 
   document.addEventListener('DOMContentLoaded', () => {
     // Default dates
-    const today = new Date().toISOString().split('T')[0];
+    const today = todayYMD();
     const now   = new Date();
     const monthStart = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
 
@@ -1114,7 +1143,7 @@
 
     // Modal open → reload prices + reset date
     el('addReadingModal')?.addEventListener('show.bs.modal', () => {
-      el('add-date').value = new Date().toISOString().split('T')[0];
+      el('add-date').value = todayYMD();
       loadPrices();
     });
 
