@@ -377,7 +377,7 @@
 
   window.exportData = async function () {
     const tables = [
-      'settings','customers','transactions','banks','cash_deposits','employees','employee_salary_payments',
+      'settings','customers','transactions','banks','cash_deposits','direct_expense_entries','employees','employee_salary_payments',
       'tanks','tank_readings','mobil_sales','cash_advances','products','users','profiles','companies'
     ];
     const backup = {
