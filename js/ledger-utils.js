@@ -92,18 +92,11 @@
   PF.employeeBalanceDelta = function(type, amount){
     const amt = PF.parseNum(amount);
     const t = String(type || 'salary_pay').toLowerCase();
-<<<<<<< HEAD
     if (t === 'credit') return amt;          // payable/settlement credit to employee
     if (t === 'advance_return') return amt;  // employee returned advance, advance balance reduces
     if (t === 'advance') return -amt;        // advance given to employee
     if (t === 'debit') return -amt;          // manual debit/adjustment
     if (t === 'salary_pay') return 0;        // normal monthly salary pay is not advance balance
-=======
-    if (t === 'credit') return amt;         // payable to employee
-    if (t === 'salary_pay') return -amt;    // paid/adjusted
-    if (t === 'advance') return -amt;       // advance given
-    if (t === 'debit') return -amt;         // manual debit/payment
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
     return 0;
   };
 

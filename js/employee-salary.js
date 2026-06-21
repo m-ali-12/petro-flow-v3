@@ -1,11 +1,7 @@
 // =============================================
 // FILE: js/employee-salary.js
 // Employee Salary Management
-<<<<<<< HEAD
 // 3-option salary flow: regular salary + advanced salary + repay advanced salary + A4 print
-=======
-// Add employees and pay monthly salaries
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
 // =============================================
 (function () {
   'use strict';
@@ -17,7 +13,6 @@
   let currentPage = 1;
 
   const sb = () => window.supabaseClient;
-<<<<<<< HEAD
   const fmt = n => Number(n || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const num = v => {
     const n = parseFloat(String(v ?? '').replace(/,/g, ''));
@@ -32,18 +27,6 @@
     if (window.supabaseClient && window.PETRO_SESSION_READY) return setTimeout(cb, 400);
     if (n > 80) return;
     setTimeout(() => waitReady(cb, n + 1), 100);
-=======
-  const fmt = n => Number(n||0).toLocaleString('en-PK',{minimumFractionDigits:2,maximumFractionDigits:2});
-  const today = () => new Date().toISOString().slice(0,10);
-  const currentMonth = () => new Date().toISOString().slice(0,7);
-
-  window.addEventListener('DOMContentLoaded', () => waitReady(init));
-
-  function waitReady(cb, n=0) {
-    if (window.supabaseClient && window.PETRO_SESSION_READY) return setTimeout(cb, 400);
-    if (n>80) return;
-    setTimeout(() => waitReady(cb, n+1), 100);
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
   }
 
   async function init() {
@@ -58,32 +41,11 @@
     await loadSalaryPayments();
   }
 
-<<<<<<< HEAD
   function missingColumn(message) {
-=======
-  async function getOwnerCustomerId() {
-    if (window.PetroLedger?.getOwnerCustomerId) return await window.PetroLedger.getOwnerCustomerId();
-    try {
-      const { data } = await sb().from('customers').select('id').eq('category','Owner').maybeSingle();
-      if (data?.id) return data.id;
-      const { data: created, error } = await sb().from('customers')
-        .insert([{ sr_no: 0, name: 'Owner', category: 'Owner', balance: 0 }])
-        .select('id').single();
-      if (error) throw error;
-      return created?.id || null;
-    } catch (e) {
-      console.warn('Owner account not available for salary transaction:', e.message);
-      return null;
-    }
-  }
-
-  function missingColumn(message){
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
     const m = String(message || '').match(/'([^']+)' column|column ['"]?([a-zA-Z0-9_]+)['"]?/i);
     return m ? (m[1] || m[2]) : null;
   }
 
-<<<<<<< HEAD
   async function safeInsert(table, payload, removable = []) {
     let row = { ...payload };
     for (let i = 0; i < 14; i++) {
@@ -116,21 +78,11 @@
     let row = { ...payload };
     const removable = ['cash_deposit_id','salary_payment_id','reference_no','payment_mode','entry_method','employee_id','salary_month','bank_id','to_bank_id','category','customer_category','linked_table','linked_id','payment_month','notes','charges'];
     for (let i = 0; i < 14; i++) {
-=======
-  async function safeInsertTransaction(payload) {
-    let row = { ...payload };
-    const removable = ['cash_deposit_id','salary_payment_id','reference_no','payment_mode','entry_method','employee_id','salary_month','bank_id','customer_category','linked_table','linked_id'];
-    for (let i=0; i<10; i++) {
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
       const { error } = await sb().from('transactions').insert([row]);
       if (!error) return true;
       const col = missingColumn(error.message || error.details || '');
       if (col && Object.prototype.hasOwnProperty.call(row, col)) { delete row[col]; continue; }
-<<<<<<< HEAD
       const rm = removable.find(k => Object.prototype.hasOwnProperty.call(row, k));
-=======
-      const rm = removable.find(k => Object.prototype.hasOwnProperty.call(row,k));
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
       if (rm && /schema cache|column/i.test(error.message || error.details || '')) { delete row[rm]; continue; }
       console.warn('Salary transaction insert skipped:', error.message);
       return false;
@@ -138,7 +90,6 @@
     return false;
   }
 
-<<<<<<< HEAD
   async function safeInsertCashDeposit(payload) {
     let row = { ...payload };
     const removable = ['transaction_type','to_bank_id','party_name','employee_id','salary_payment_id','salary_month','reference','note','updated_at'];
@@ -164,25 +115,15 @@
       debit: 'Legacy Hidden Entry'
     };
     return map[type || 'salary_pay'] || type || 'Salary (Regular Monthly)';
-=======
-  function salaryTypeLabel(type) {
-    const map = { salary_pay:'Salary Pay', advance:'Advanced Payment', credit:'Credit / Payable', debit:'Debit / Adjustment' };
-    return map[type || 'salary_pay'] || type || 'Salary Pay';
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
   }
 
   function salaryTypeBadge(type) {
     const t = type || 'salary_pay';
-<<<<<<< HEAD
     const cls = t === 'advance' ? 'bg-warning text-dark' : t === 'advance_return' ? 'bg-info text-dark' : t === 'credit' || t === 'debit' ? 'bg-secondary' : 'bg-primary';
-=======
-    const cls = t === 'credit' ? 'bg-success' : t === 'advance' ? 'bg-warning text-dark' : t === 'debit' ? 'bg-secondary' : 'bg-primary';
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
     return `<span class="badge ${cls}">${salaryTypeLabel(t)}</span>`;
   }
 
   function employeeDelta(type, amount) {
-<<<<<<< HEAD
     const amt = num(amount);
     const t = String(type || 'salary_pay').toLowerCase();
     // Regular monthly salary is a business expense only; it does not create/clear employee advance balance.
@@ -196,82 +137,39 @@
     if (t === 'advance') return 'EmployeeAdvance';
     if (t === 'advance_return') return 'EmployeeAdvanceReturn';
     return 'SalaryPay';
-=======
-    if (window.PetroLedger?.employeeBalanceDelta) return window.PetroLedger.employeeBalanceDelta(type, amount);
-    const amt = Number(amount || 0);
-    return type === 'credit' ? amt : -amt;
-  }
-
-  function ownerDelta(type, amount) {
-    // Employee salary/advance is business cash outflow, not Owner khata movement.
-    // It is recorded in P&L through SalaryPay/EmployeeAdvance transactions.
-    return 0;
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
   }
 
   async function adjustEmployee(employeeId, delta) {
     if (!employeeId || !delta) return true;
     if (window.PetroLedger?.adjustEmployeeBalance) return await window.PetroLedger.adjustEmployeeBalance(employeeId, delta);
-<<<<<<< HEAD
     const { data, error } = await sb().from('employees').select('balance').eq('id', employeeId).maybeSingle();
     if (error) { console.warn('Employee balance fetch failed:', error.message); return false; }
     const next = num(data?.balance) + num(delta);
     const { error: upErr } = await sb().from('employees').update({ balance: next, updated_at: new Date().toISOString() }).eq('id', employeeId);
     if (upErr) { console.warn('Employee balance update failed:', upErr.message); return false; }
-=======
-    return true;
-  }
-
-  async function adjustOwner(delta) {
-    if (!delta) return true;
-    const ownerId = await getOwnerCustomerId();
-    if (!ownerId) return false;
-    if (window.PetroLedger?.adjustCustomerBalance) return await window.PetroLedger.adjustCustomerBalance(ownerId, delta);
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
     return true;
   }
 
   async function reverseSalaryImpact(oldRow) {
     if (!oldRow) return;
     const t = oldRow.payment_type || (oldRow.is_advance ? 'advance' : 'salary_pay');
-<<<<<<< HEAD
     await adjustEmployee(oldRow.employee_id, -employeeDelta(t, oldRow.amount));
-=======
-    const amt = Number(oldRow.amount || 0);
-    await adjustEmployee(oldRow.employee_id, -employeeDelta(t, amt));
-    await adjustOwner(-ownerDelta(t, amt));
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
   }
 
   async function applySalaryImpact(row) {
     if (!row) return;
     const t = row.payment_type || 'salary_pay';
-<<<<<<< HEAD
     await adjustEmployee(row.employee_id, employeeDelta(t, row.amount));
   }
 
   let _employeeModal, _salaryModal;
   function employeeModal() { return _employeeModal || (_employeeModal = new bootstrap.Modal(document.getElementById('employeeModal'))); }
   function salaryModal() { return _salaryModal || (_salaryModal = new bootstrap.Modal(document.getElementById('salaryModal'))); }
-=======
-    const amt = Number(row.amount || 0);
-    await adjustEmployee(row.employee_id, employeeDelta(t, amt));
-    await adjustOwner(ownerDelta(t, amt));
-  }
-
-  let _employeeModal, _salaryModal;
-  function employeeModal(){ return _employeeModal || (_employeeModal = new bootstrap.Modal(document.getElementById('employeeModal'))); }
-  function salaryModal(){ return _salaryModal || (_salaryModal = new bootstrap.Modal(document.getElementById('salaryModal'))); }
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
 
   // ── Employees ────────────────────────────────────────────────
   async function loadEmployees() {
     const { data, error } = await sb().from('employees').select('*').order('name');
-<<<<<<< HEAD
     if (error) { toast('Error loading employees: ' + error.message + ' | Please run employee salary DB SQL first.', 'danger'); return; }
-=======
-    if (error) { toast('Error loading employees: ' + error.message + ' | Please run PETROFLOW_FINANCE_SALARY_DB_CHANGES.sql first.', 'danger'); return; }
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
     employees = data || [];
     renderEmployees();
     populateEmployeeDropdowns();
@@ -283,7 +181,6 @@
     const active = employees.filter(e => (e.status || 'active') === 'active');
     if (!employees.length) {
       el.innerHTML = '<div class="text-center py-3 text-muted small">No employees added yet.<br>Click "Add" to start.</div>';
-<<<<<<< HEAD
       document.getElementById('stat-employees').textContent = '0';
       return;
     }
@@ -299,20 +196,6 @@
           </div>
           <div class="small ${bal < 0 ? 'text-danger' : 'text-primary'} fw-semibold">
             Advance Balance: ${bal < 0 ? 'Rs. ' + fmt(Math.abs(bal)) : 'Clear'}
-=======
-      return;
-    }
-    el.innerHTML = employees.map(e => `
-      <div class="employee-row d-flex align-items-start justify-content-between py-2 border-bottom">
-        <div>
-          <div class="fw-semibold">${esc(e.name)}</div>
-          <div class="small text-muted">${esc(e.role || '—')} ${e.phone ? ' • '+esc(e.phone) : ''}</div>
-          <div class="small"><span class="text-success fw-semibold">Rs. ${fmt(e.salary)}</span> / month
-            <span class="badge bg-${(e.status||'active') === 'active' ? 'success' : 'secondary'} ms-1">${esc(e.status||'active')}</span>
-          </div>
-          <div class="small ${Number(e.balance||0) >= 0 ? 'text-primary' : 'text-danger'} fw-semibold">
-            Account: ${Number(e.balance||0) >= 0 ? 'Payable/Credit' : 'Advance/Debit'} Rs. ${fmt(Math.abs(Number(e.balance||0)))}
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
           </div>
         </div>
         <div class="text-nowrap">
@@ -320,21 +203,13 @@
           <button class="btn btn-link btn-sm p-0 me-2 text-success" onclick="openSalaryModal('${e.id}')"><i class="bi bi-cash-coin"></i></button>
           <button class="btn btn-link btn-sm p-0 text-danger" onclick="deleteEmployee('${e.id}')"><i class="bi bi-trash"></i></button>
         </div>
-<<<<<<< HEAD
       </div>`;
     }).join('');
-=======
-      </div>`).join('');
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
     document.getElementById('stat-employees').textContent = active.length;
   }
 
   function populateEmployeeDropdowns() {
-<<<<<<< HEAD
     ['salary-employee', 'filter-employee'].forEach(id => {
-=======
-    ['salary-employee','filter-employee'].forEach(id => {
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
       const sel = document.getElementById(id);
       if (!sel) return;
       const val = sel.value;
@@ -364,14 +239,7 @@
         document.getElementById('emp-status').value = e.status || 'active';
       }
     } else {
-<<<<<<< HEAD
       ['emp-name','emp-role','emp-phone','emp-salary'].forEach(x => document.getElementById(x).value = '');
-=======
-      document.getElementById('emp-name').value = '';
-      document.getElementById('emp-role').value = '';
-      document.getElementById('emp-phone').value = '';
-      document.getElementById('emp-salary').value = '';
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
       document.getElementById('emp-status').value = 'active';
     }
     employeeModal().show();
@@ -379,35 +247,16 @@
 
   window.saveEmployee = async function () {
     const id = document.getElementById('emp-id').value;
-<<<<<<< HEAD
     const row = {
       name: document.getElementById('emp-name').value.trim(),
       role: document.getElementById('emp-role').value.trim() || null,
       phone: document.getElementById('emp-phone').value.trim() || null,
       salary: num(document.getElementById('emp-salary').value),
       status: document.getElementById('emp-status').value || 'active',
-=======
-    const name = document.getElementById('emp-name').value.trim();
-    const role = document.getElementById('emp-role').value.trim();
-    const phone = document.getElementById('emp-phone').value.trim();
-    const salary = parseFloat(document.getElementById('emp-salary').value || '0');
-    const status = document.getElementById('emp-status').value || 'active';
-
-    if (!name) { toast('Employee name is required.', 'warning'); return; }
-    if (salary < 0) { toast('Salary cannot be negative.', 'warning'); return; }
-
-    const row = {
-      name,
-      role: role || null,
-      phone: phone || null,
-      salary,
-      status,
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
       created_by: window.currentUser?.id || null,
       updated_at: new Date().toISOString()
     };
 
-<<<<<<< HEAD
     if (!row.name) { toast('Employee name is required.', 'warning'); return; }
     if (row.salary < 0) { toast('Salary cannot be negative.', 'warning'); return; }
 
@@ -416,29 +265,14 @@
     if (id) res = await safeUpdate('employees', row, id, removable);
     else { row.created_at = new Date().toISOString(); res = await safeInsert('employees', row, ['created_by','created_at','updated_at']); }
     if (res.error) { toast('Error saving employee: ' + res.error.message, 'danger'); return; }
-=======
-    let error;
-    if (id) {
-      ({ error } = await sb().from('employees').update(row).eq('id', id));
-    } else {
-      row.created_at = new Date().toISOString();
-      ({ error } = await sb().from('employees').insert(row));
-    }
-    if (error) { toast('Error saving employee: ' + error.message, 'danger'); return; }
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
     employeeModal().hide();
     toast('✅ Employee saved!', 'success');
     await loadEmployees();
   };
 
   window.deleteEmployee = async function (id) {
-<<<<<<< HEAD
     const { data: usedRows } = await sb().from('employee_salary_payments').select('id').eq('employee_id', id).limit(1);
     if (usedRows && usedRows.length) { toast('Cannot delete — salary/advance entries exist for this employee.', 'danger'); return; }
-=======
-    const used = salaryPayments.some(p => String(p.employee_id) === String(id));
-    if (used) { toast('Cannot delete — salary payments exist for this employee.', 'danger'); return; }
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
     if (!confirm('Delete this employee?')) return;
     const { error } = await sb().from('employees').delete().eq('id', id);
     if (error) { toast('Error: ' + error.message, 'danger'); return; }
@@ -455,11 +289,7 @@
   }
 
   function populateBankDropdowns() {
-<<<<<<< HEAD
     ['salary-bank', 'filter-bank'].forEach(id => {
-=======
-    ['salary-bank','filter-bank'].forEach(id => {
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
       const sel = document.getElementById(id);
       if (!sel) return;
       const val = sel.value;
@@ -476,7 +306,6 @@
     });
   }
 
-<<<<<<< HEAD
   // ── Monthly calculations ─────────────────────────────────────
   function activeSalaryRows(rows) {
     return (rows || []).filter(r => (r.entry_status || 'active') !== 'void' && ['salary_pay','advance','advance_return'].includes(r.payment_type || 'salary_pay'));
@@ -504,8 +333,6 @@
   // Old auto-split/monthly payable functions removed.
   // New flow uses only explicit 3 options: salary_pay, advance, advance_return.
 
-=======
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
   // ── Salary Payments ──────────────────────────────────────────
   window.loadSalaryPayments = async function () {
     const month = document.getElementById('filter-month').value;
@@ -517,15 +344,9 @@
     if (employeeId) query = query.eq('employee_id', employeeId);
 
     const { data, error } = await query;
-<<<<<<< HEAD
     if (error) { toast('Error loading salary payments: ' + error.message + ' | Please run employee salary DB SQL first.', 'danger'); return; }
 
     salaryPayments = activeSalaryRows(data || []).filter(p => {
-=======
-    if (error) { toast('Error loading salary payments: ' + error.message + ' | Please run PETROFLOW_FINANCE_SALARY_DB_CHANGES.sql first.', 'danger'); return; }
-
-    salaryPayments = (data || []).filter(p => {
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
       if (!bankId) return true;
       if (bankId === 'cash') return !p.bank_id;
       return String(p.bank_id || '') === String(bankId);
@@ -533,7 +354,6 @@
     currentPage = 1;
     renderSalaryPayments();
     updateStats();
-<<<<<<< HEAD
     renderMonthlySummary();
   };
 
@@ -566,14 +386,6 @@
     const tbody = document.getElementById('salary-tbody');
     if (!salaryPayments.length) {
       tbody.innerHTML = `<tr><td colspan="10" class="text-center py-5 text-muted"><i class="bi bi-inbox fs-2 d-block mb-2"></i>No salary/advance entries found.</td></tr>`;
-=======
-  };
-
-  function renderSalaryPayments() {
-    const tbody = document.getElementById('salary-tbody');
-    if (!salaryPayments.length) {
-      tbody.innerHTML = `<tr><td colspan="9" class="text-center py-5 text-muted"><i class="bi bi-inbox fs-2 d-block mb-2"></i>No salary payments found.</td></tr>`;
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
       document.getElementById('salary-pagination-info').textContent = 'Showing 0 records';
       document.getElementById('salary-pagination-btns').innerHTML = '';
       return;
@@ -587,18 +399,14 @@
     tbody.innerHTML = slice.map(p => {
       const emp = employees.find(e => String(e.id) === String(p.employee_id));
       const bank = banks.find(b => String(b.id) === String(p.bank_id));
-<<<<<<< HEAD
       const type = p.payment_type || (p.is_advance ? 'advance' : 'salary_pay');
       const sign = type === 'advance_return' ? '+ ' : (type === 'salary_pay' || type === 'advance' ? '- ' : '');
       const cls = type === 'advance_return' ? 'text-success' : (type === 'advance' ? 'text-warning' : 'text-danger');
       const status = type === 'salary_pay' ? 'Regular monthly salary paid' : type === 'advance' ? `Advanced salary for ${esc(p.advance_month || p.salary_month || '—')}` : type === 'advance_return' ? 'Advance salary vasooli / recovered' : 'Legacy entry hidden from new flow';
-=======
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
       return `<tr class="salary-row">
         <td class="fw-semibold">${fmtDate(p.payment_date)}</td>
         <td><span class="badge bg-light text-dark border">${esc(p.salary_month || '—')}</span></td>
         <td>${esc(emp?.name || p.employee_name || 'Unknown')}</td>
-<<<<<<< HEAD
         <td>${salaryTypeBadge(type)}</td>
         <td class="${cls} fw-bold">${sign}Rs. ${fmt(p.amount)}</td>
         <td class="small text-muted">${bank ? esc(bank.name) : 'Cash'}</td>
@@ -606,25 +414,13 @@
         <td class="small text-muted">${esc(p.note || '—')}</td>
         <td class="small text-muted">${status}</td>
         <td class="text-nowrap">
-=======
-        <td>${salaryTypeBadge(p.payment_type || (p.is_advance ? 'advance' : 'salary_pay'))}</td>
-        <td class="${(p.payment_type || '') === 'credit' ? 'text-success' : 'text-danger'} fw-bold">${(p.payment_type || '') === 'credit' ? '+ ' : '- '}Rs. ${fmt(p.amount)}</td>
-        <td class="small text-muted">${(p.payment_type || '') === 'credit' ? 'Ledger Credit' : (bank ? esc(bank.name) : 'Cash')}</td>
-        <td class="small text-muted">${esc(p.reference || '—')}</td>
-        <td class="small text-muted">${esc(p.note || '—')}</td>
-        <td>
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
           <button class="btn btn-link btn-sm p-0 me-2 text-primary" onclick="openEditSalary('${p.id}')"><i class="bi bi-pencil"></i></button>
           <button class="btn btn-link btn-sm p-0 text-danger" onclick="deleteSalaryPayment('${p.id}')"><i class="bi bi-trash"></i></button>
         </td>
       </tr>`;
     }).join('');
 
-<<<<<<< HEAD
     document.getElementById('salary-pagination-info').textContent = `Showing ${start + 1}–${Math.min(start + PAGE_SIZE, total)} of ${total} records`;
-=======
-    document.getElementById('salary-pagination-info').textContent = `Showing ${start+1}–${Math.min(start+PAGE_SIZE, total)} of ${total} records`;
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
     renderPagination(pages);
   }
 
@@ -632,26 +428,14 @@
     const el = document.getElementById('salary-pagination-btns');
     if (pages <= 1) { el.innerHTML = ''; return; }
     let html = '<nav><ul class="pagination pagination-sm mb-0">';
-<<<<<<< HEAD
     html += `<li class="page-item ${currentPage === 1 ? 'disabled' : ''}"><a class="page-link" href="#" onclick="goSalaryPage(${currentPage - 1});return false">‹</a></li>`;
     for (let i = 1; i <= pages; i++) html += `<li class="page-item ${i === currentPage ? 'active' : ''}"><a class="page-link" href="#" onclick="goSalaryPage(${i});return false">${i}</a></li>`;
     html += `<li class="page-item ${currentPage === pages ? 'disabled' : ''}"><a class="page-link" href="#" onclick="goSalaryPage(${currentPage + 1});return false">›</a></li>`;
-=======
-    html += `<li class="page-item ${currentPage===1?'disabled':''}"><a class="page-link" href="#" onclick="goSalaryPage(${currentPage-1});return false">‹</a></li>`;
-    for (let i=1; i<=pages; i++) {
-      html += `<li class="page-item ${i===currentPage?'active':''}"><a class="page-link" href="#" onclick="goSalaryPage(${i});return false">${i}</a></li>`;
-    }
-    html += `<li class="page-item ${currentPage===pages?'disabled':''}"><a class="page-link" href="#" onclick="goSalaryPage(${currentPage+1});return false">›</a></li>`;
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
     html += '</ul></nav>';
     el.innerHTML = html;
   }
 
-<<<<<<< HEAD
   window.goSalaryPage = function (p) { currentPage = p; renderSalaryPayments(); };
-=======
-  window.goSalaryPage = function(p){ currentPage = p; renderSalaryPayments(); };
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
 
   window.openSalaryModal = function (employeeId) {
     document.getElementById('salary-id').value = '';
@@ -674,7 +458,6 @@
     const bank = document.getElementById('salary-bank');
     const title = document.getElementById('modal-salary-title');
     if (title) title.textContent = salaryTypeLabel(type);
-<<<<<<< HEAD
     if (bank) bank.disabled = false;
     if (!document.getElementById('salary-id')?.value && type === 'salary_pay') fillEmployeeSalary();
     if (!document.getElementById('salary-id')?.value && type === 'advance') document.getElementById('salary-amount').value = '';
@@ -683,22 +466,11 @@
   };
 
   window.fillEmployeeSalary = async function () {
-=======
-    if (bank) {
-      bank.disabled = type === 'credit';
-      if (type === 'credit') bank.value = '';
-    }
-    if (!document.getElementById('salary-id')?.value && type === 'salary_pay') fillEmployeeSalary();
-  };
-
-  window.fillEmployeeSalary = function () {
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
     const empId = document.getElementById('salary-employee').value;
     const emp = employees.find(e => String(e.id) === String(empId));
     if (emp && !document.getElementById('salary-id').value) {
       document.getElementById('salary-amount').value = emp.salary || '';
     }
-<<<<<<< HEAD
     previewSalarySplit();
   };
 
@@ -731,8 +503,6 @@
         ? `<span class="text-info fw-semibold">Current advance balance: Rs. ${fmt(outstanding)}. Vasooli save hone ke baad advance balance kam/clear ho jayega.</span>`
         : `<span class="text-success fw-semibold">Is employee ka current advance balance zero hai.</span>`;
     }
-=======
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
   };
 
   window.openEditSalary = function (id) {
@@ -752,7 +522,6 @@
     salaryModal().show();
   };
 
-<<<<<<< HEAD
   async function cleanupRelated(id) {
     try { await sb().from('cash_deposits').delete().eq('salary_payment_id', id); } catch (e) { console.warn('Related bank/cash salary entry cleanup skipped:', e.message); }
     try { await sb().from('transactions').delete().eq('salary_payment_id', id); } catch (e) { console.warn('Related salary transaction cleanup skipped:', e.message); }
@@ -831,15 +600,12 @@
     return res;
   }
 
-=======
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
   window.saveSalaryPayment = async function () {
     const id = document.getElementById('salary-id').value;
     const type = document.getElementById('salary-type').value || 'salary_pay';
     const employeeId = document.getElementById('salary-employee').value;
     const month = document.getElementById('salary-month').value;
     const date = document.getElementById('salary-date').value;
-<<<<<<< HEAD
     const amount = num(document.getElementById('salary-amount').value);
     const bankId = document.getElementById('salary-bank').value;
     const ref = document.getElementById('salary-ref').value.trim();
@@ -852,26 +618,11 @@
     if (!date) { toast('Payment date is required.', 'warning'); return; }
     if (!amount || amount <= 0) { toast('Amount must be greater than 0.', 'warning'); return; }
     if (!['salary_pay','advance','advance_return'].includes(type)) { toast('Only 3 entry types allowed: Salary, Advanced Salary, Repay Advanced Salary.', 'warning'); return; }
-=======
-    const amount = parseFloat(document.getElementById('salary-amount').value || '0');
-    let bankId = document.getElementById('salary-bank').value;
-    const ref = document.getElementById('salary-ref').value.trim();
-    const note = document.getElementById('salary-note').value.trim();
-    const emp = employees.find(e => String(e.id) === String(employeeId));
-    if (type === 'credit') bankId = '';
-    const bank = banks.find(b => String(b.id) === String(bankId));
-
-    if (!employeeId) { toast('Please select employee.', 'warning'); return; }
-    if (!month) { toast('Salary month is required.', 'warning'); return; }
-    if (!date) { toast('Payment date is required.', 'warning'); return; }
-    if (!amount || amount <= 0) { toast('Amount must be greater than 0.', 'warning'); return; }
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
 
     let oldRow = null;
     if (id) {
       const oldRes = await sb().from('employee_salary_payments').select('*').eq('id', id).maybeSingle();
       oldRow = oldRes.data || null;
-<<<<<<< HEAD
       await reverseSalaryImpact(oldRow);
       await cleanupRelated(id);
     }
@@ -915,96 +666,11 @@
     if (type === 'salary_pay') toast('✅ Regular monthly salary saved!', 'success');
     else if (type === 'advance') toast('✅ Advanced salary saved and employee advance balance updated!', 'success');
     else toast('✅ Advance salary vasooli saved and balance updated!', 'success');
-=======
-    }
-
-    const row = {
-      employee_id: employeeId,
-      employee_name: emp?.name || null,
-      salary_month: month,
-      payment_date: date,
-      payment_type: type,
-      is_advance: type === 'advance',
-      balance_effect: employeeDelta(type, amount),
-      amount,
-      bank_id: bankId || null,
-      payment_mode: type === 'credit' ? 'Ledger Credit' : (bankId ? 'Bank' : 'Cash'),
-      reference: ref || null,
-      note: note || null,
-      created_by: window.currentUser?.id || null,
-      updated_at: new Date().toISOString()
-    };
-
-    let error, saved = null;
-    if (id) {
-      await reverseSalaryImpact(oldRow);
-      try { await sb().from('cash_deposits').delete().eq('salary_payment_id', id); } catch(e) { console.warn('Old bank finance entry cleanup skipped:', e.message); }
-      try { await sb().from('transactions').delete().eq('salary_payment_id', id); } catch(e) { console.warn('Old salary transaction cleanup skipped:', e.message); }
-      ({ error } = await sb().from('employee_salary_payments').update(row).eq('id', id));
-      saved = { ...row, id };
-    } else {
-      row.created_at = new Date().toISOString();
-      const res = await sb().from('employee_salary_payments').insert(row).select().single();
-      error = res.error;
-      saved = res.data;
-    }
-    if (error) {
-      if (oldRow) await applySalaryImpact(oldRow);
-      toast('Error saving employee salary entry: ' + error.message, 'danger');
-      return;
-    }
-
-    let cashDepositId = null;
-    if (saved && type !== 'credit') {
-      if (bankId) {
-        const depRow = {
-          deposit_date: date,
-          transaction_type: type === 'salary_pay' ? 'salary_pay' : 'payment',
-          bank_id: bankId,
-          amount,
-          deposited_by: emp?.name || null,
-          party_name: emp?.name || null,
-          employee_id: employeeId,
-          salary_payment_id: saved.id,
-          salary_month: month,
-          reference: ref || null,
-          note: `${salaryTypeLabel(type)}${note ? ' | ' + note : ''}`,
-          created_by: window.currentUser?.id || null,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        };
-        const depRes = await sb().from('cash_deposits').insert(depRow).select('id').single();
-        if (!depRes.error) cashDepositId = depRes.data?.id || null;
-        else console.warn('Salary bank finance entry skipped:', depRes.error.message);
-      }
-
-      await safeInsertTransaction({
-        transaction_type: type === 'advance' ? 'EmployeeAdvance' : type === 'debit' ? 'EmployeeDebit' : 'SalaryPay',
-        amount,
-        charges: amount,
-        cash_deposit_id: cashDepositId,
-        salary_payment_id: saved.id,
-        employee_id: employeeId,
-        salary_month: month,
-        reference_no: ref || null,
-        payment_mode: bankId ? (bank?.name || 'Bank') : 'Cash',
-        entry_method: 'employee_salary',
-        description: `${salaryTypeLabel(type)} for ${emp?.name || 'Employee'} (${month})${bankId ? ' via '+(bank?.name || 'Bank') : ' in Cash'}${note ? ' | '+note : ''}`,
-        created_at: new Date(date + 'T12:00:00').toISOString()
-      });
-    }
-
-    await applySalaryImpact(saved);
-
-    salaryModal().hide();
-    toast('✅ Employee salary account entry saved!', 'success');
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
     await loadEmployees();
     await loadSalaryPayments();
   };
 
   window.deleteSalaryPayment = async function (id) {
-<<<<<<< HEAD
     if (!confirm('Delete this employee salary/account entry? Employee balance and related finance entries will be reversed.')) return;
     const oldRes = await sb().from('employee_salary_payments').select('*').eq('id', id).maybeSingle();
     const oldRow = oldRes.data || null;
@@ -1013,17 +679,6 @@
     if (error) { toast('Error: ' + error.message, 'danger'); return; }
     await reverseSalaryImpact(oldRow);
     toast('Employee salary/account entry deleted and balance reversed.', 'warning');
-=======
-    if (!confirm('Delete this employee salary/account entry? Employee and Owner balances will be reversed.')) return;
-    const oldRes = await sb().from('employee_salary_payments').select('*').eq('id', id).maybeSingle();
-    const oldRow = oldRes.data || null;
-    try { await sb().from('cash_deposits').delete().eq('salary_payment_id', id); } catch(e) { console.warn('Related bank salary entry delete skipped:', e.message); }
-    try { await sb().from('transactions').delete().eq('salary_payment_id', id); } catch(e) { console.warn('Related salary transaction delete skipped:', e.message); }
-    const { error } = await sb().from('employee_salary_payments').delete().eq('id', id);
-    if (error) { toast('Error: ' + error.message, 'danger'); return; }
-    await reverseSalaryImpact(oldRow);
-    toast('Employee salary/account entry deleted and balances reversed.', 'warning');
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
     await loadEmployees();
     await loadSalaryPayments();
   };
@@ -1037,7 +692,6 @@
 
   function updateStats() {
     const month = document.getElementById('filter-month')?.value || currentMonth();
-<<<<<<< HEAD
     const visibleRows = salaryPayments.filter(p => !month || p.salary_month === month);
     const salaryPaid = visibleRows.filter(p => (p.payment_type || 'salary_pay') === 'salary_pay').reduce((s, p) => s + num(p.amount), 0);
     const advancePaid = visibleRows.filter(p => (p.payment_type || '') === 'advance').reduce((s, p) => s + num(p.amount), 0);
@@ -1098,34 +752,4 @@
   }
 
   console.log('✅ employee-salary.js loaded with 3-option salary flow + A4 print');
-=======
-    const paidRows = salaryPayments.filter(p => p.salary_month === month && (p.payment_type || 'salary_pay') !== 'credit');
-    const paidTotal = paidRows.reduce((s,p) => s + Number(p.amount || 0), 0);
-    const baseTotal = employees
-      .filter(e => (e.status || 'active') === 'active')
-      .reduce((s,e) => s + Number(e.salary || 0), 0);
-
-    document.getElementById('stat-employees').textContent = employees.filter(e => (e.status || 'active') === 'active').length;
-    document.getElementById('stat-paid').textContent = 'Rs. ' + fmt(paidTotal);
-    document.getElementById('stat-payment-count').textContent = paidRows.length;
-    document.getElementById('stat-base').textContent = 'Rs. ' + fmt(baseTotal);
-  }
-
-  function fmtDate(d) {
-    if (!d) return '—';
-    try { return new Date(d+'T00:00:00').toLocaleDateString('en-PK',{day:'2-digit',month:'short',year:'numeric',weekday:'short'}); }
-    catch { return d; }
-  }
-  function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-  function toast(msg, type='success') {
-    const t = document.getElementById('liveToast');
-    const m = document.getElementById('toast-message');
-    if (!t||!m) return;
-    m.textContent = msg;
-    t.className = `toast bg-${type==='danger'?'danger':type==='warning'?'warning':'success'} text-white`;
-    new bootstrap.Toast(t,{delay:4500}).show();
-  }
-
-  console.log('✅ employee-salary.js loaded');
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
 })();

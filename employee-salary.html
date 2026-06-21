@@ -31,23 +31,16 @@
     <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
       <div>
         <h4 class="mb-1"><i class="bi bi-person-vcard me-2"></i>Employee Salary</h4>
-<<<<<<< HEAD
         <small class="opacity-75">Regular monthly salary, advanced salary credit, repay advance salary and A4 print</small>
-=======
-        <small class="opacity-75">Add employees and pay monthly salary with bank/cash record</small>
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
       </div>
       <div class="d-flex align-items-center gap-2 flex-wrap">
         <div id="user-role-badge"></div>
         <button class="btn btn-light btn-sm fw-semibold" onclick="openEmployeeModal()">
           <i class="bi bi-person-plus me-1"></i>New Employee
         </button>
-<<<<<<< HEAD
         <button class="btn btn-success btn-sm fw-semibold" onclick="printSalaryReport()">
           <i class="bi bi-printer me-1"></i>Print A4
         </button>
-=======
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
         <button class="btn btn-warning btn-sm fw-semibold" onclick="openSalaryModal()">
           <i class="bi bi-cash-coin me-1"></i>Pay Salary
         </button>
@@ -66,23 +59,14 @@
     </div>
     <div class="col-6 col-lg-3">
       <div class="stat-card green">
-<<<<<<< HEAD
         <div class="small opacity-75 mb-1">This Month Salary Paid</div>
-=======
-        <div class="small opacity-75 mb-1">This Month Paid</div>
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
         <div class="fs-4 fw-bold" id="stat-paid">Rs. 0</div>
       </div>
     </div>
     <div class="col-6 col-lg-3">
       <div class="stat-card orange">
-<<<<<<< HEAD
         <div class="small opacity-75 mb-1">This Month Advanced Salary</div>
         <div class="fs-4 fw-bold" id="stat-advance">Rs. 0</div>
-=======
-        <div class="small opacity-75 mb-1">Payments This Month</div>
-        <div class="fs-4 fw-bold" id="stat-payment-count">0</div>
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
       </div>
     </div>
     <div class="col-6 col-lg-3">
@@ -111,27 +95,18 @@
                 <option value="">All Payment Modes</option>
               </select>
             </div>
-<<<<<<< HEAD
             <div class="col-md-2 text-end d-flex gap-1 justify-content-end">
               <button class="btn btn-sm btn-outline-success" onclick="printSalaryReport()" title="Print A4">
                 <i class="bi bi-printer"></i>
               </button>
               <button class="btn btn-sm btn-outline-secondary" onclick="resetSalaryFilters()">
                 <i class="bi bi-arrow-counterclockwise"></i>
-=======
-            <div class="col-md-2 text-end">
-              <button class="btn btn-sm btn-outline-secondary" onclick="resetSalaryFilters()">
-                <i class="bi bi-arrow-counterclockwise me-1"></i>Reset
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
               </button>
             </div>
           </div>
         </div>
         <div class="card-body p-0">
-<<<<<<< HEAD
           <div id="salary-month-summary" class="p-3 border-bottom bg-light small"></div>
-=======
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
           <div class="table-responsive">
             <table class="table align-middle mb-0">
               <thead class="table-light">
@@ -144,19 +119,12 @@
                   <th>Mode / Bank</th>
                   <th>Reference</th>
                   <th>Note</th>
-<<<<<<< HEAD
                   <th>Status</th>
-=======
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
                   <th></th>
                 </tr>
               </thead>
               <tbody id="salary-tbody">
-<<<<<<< HEAD
                 <tr><td colspan="10" class="text-center py-4 text-muted">Loading salary payments...</td></tr>
-=======
-                <tr><td colspan="9" class="text-center py-4 text-muted">Loading salary payments...</td></tr>
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
               </tbody>
             </table>
           </div>
@@ -247,29 +215,16 @@
         <div class="mb-3">
           <label class="form-label fw-semibold">Entry Type <span class="text-danger">*</span></label>
           <select class="form-select" id="salary-type" onchange="updateSalaryTypeUI()">
-<<<<<<< HEAD
             <option value="salary_pay">1. Salary (Regular Monthly)</option>
             <option value="advance">2. Advanced Salary (Credit)</option>
             <option value="advance_return">3. Repay Advanced Salary (Vasooli)</option>
           </select>
           <div class="form-text small">Sirf 3 options: regular monthly salary, advanced salary, aur advance salary ki vasooli. Regular salary monthly salary base se zyada save nahi hogi; extra amount Advanced Salary me enter karein.</div>
-=======
-            <option value="salary_pay">Salary Pay</option>
-            <option value="advance">Advanced Payment</option>
-            <option value="credit">Credit / Payable</option>
-            <option value="debit">Debit / Adjustment</option>
-          </select>
-          <div class="form-text small">Credit sirf employee account payable mein add hota hai. Salary Pay/Advance/Debit cash ya bank se outflow record karte hain.</div>
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
         </div>
         <div class="row g-3">
           <div class="col-md-6 mb-3">
             <label class="form-label fw-semibold">Salary Month <span class="text-danger">*</span></label>
-<<<<<<< HEAD
             <input type="month" class="form-control" id="salary-month" required onchange="previewSalarySplit()">
-=======
-            <input type="month" class="form-control" id="salary-month" required>
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
           </div>
           <div class="col-md-6 mb-3">
             <label class="form-label fw-semibold">Payment Date <span class="text-danger">*</span></label>
@@ -278,12 +233,8 @@
         </div>
         <div class="mb-3">
           <label class="form-label fw-semibold">Amount (Rs.) <span class="text-danger">*</span></label>
-<<<<<<< HEAD
           <input type="number" class="form-control" id="salary-amount" min="1" step="0.01" placeholder="0.00" required oninput="previewSalarySplit()">
           <div id="salary-split-preview" class="form-text small"></div>
-=======
-          <input type="number" class="form-control" id="salary-amount" min="1" step="0.01" placeholder="0.00" required>
->>>>>>> bcf6dc706068ee9b5505c0f6e8aba23bcfab3808
         </div>
         <div class="mb-3">
           <label class="form-label fw-semibold">Payment Mode</label>
