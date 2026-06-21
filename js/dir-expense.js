@@ -8,48 +8,83 @@
   let currentPage = 1;
   const pageSize = 12;
 
+  // UI types are clearer for business use. DB still stores old safe values
+  // cash_given/cash_received so no new DB constraint is required.
   const TYPES = {
-    cash_given: {
-      label: 'Cash Given to Owner / Dir Expense',
-      short: 'Cash Given',
+    credit_given: {
+      label: 'Credit / Cash Given to Owner',
+      short: 'Credit Given',
       badge: 'bg-danger',
       effect: 'debit',
-      help: 'Owner/dir expense ne business se cash liya. Balance pending barhega.',
-      bankType: 'payment'
+      help: 'Owner/dir expense ne business se cash ya bank se paisay liye. Pending balance barhega.',
+      bankType: 'payment',
+      dbType: 'cash_given',
+      systemCategory: 'Credit / Cash Given'
     },
-    cash_received: {
-      label: 'Cash Received Back / Vasooli',
+    vasooli_received: {
+      label: 'Vasooli / Cash Received Back',
       short: 'Vasooli',
       badge: 'bg-success',
       effect: 'credit',
-      help: 'Owner/dir expense ne cash/bank wapis diya. Pending balance kam hoga.',
-      bankType: 'credit'
+      help: 'Owner/dir expense ne paisay wapis diye. Pending kam hoga; extra amount owner advance/credit ban jaye gi.',
+      bankType: 'credit',
+      dbType: 'cash_received',
+      systemCategory: 'Vasooli / Payment Received'
+    },
+    advance_received: {
+      label: 'Owner Advance Received',
+      short: 'Advance Received',
+      badge: 'bg-secondary',
+      effect: 'credit',
+      help: 'Owner ne extra advance diya. Ye profit nahi, owner ka advance/credit hai. Baad me owner wapis le sakta hai.',
+      bankType: 'credit',
+      dbType: 'cash_received',
+      systemCategory: 'Owner Advance Received'
+    },
+    advance_return: {
+      label: 'Return Owner Advance',
+      short: 'Advance Return',
+      badge: 'bg-dark',
+      effect: 'debit',
+      help: 'Owner ne pehle jo advance diya tha, ab us me se cash/bank wapis le raha hai. Sirf advance balance tak allow hai.',
+      bankType: 'payment',
+      dbType: 'cash_given',
+      systemCategory: 'Owner Advance Return'
     },
     bank_transfer_to_owner: {
       label: 'Bank Transfer to Owner Account',
-      short: 'Transfer To Owner',
+      short: 'Bank → Owner',
       badge: 'bg-warning text-dark',
       effect: 'debit',
-      help: 'Company bank se owner/direct expense bank me transfer. Balance pending barhega.',
-      bankType: 'transfer'
+      help: 'Business bank se owner/direct expense bank account me transfer. Pending balance barhega.',
+      bankType: 'transfer',
+      dbType: 'bank_transfer_to_owner',
+      systemCategory: 'Bank Transfer to Owner'
     },
     bank_transfer_from_owner: {
       label: 'Bank Transfer from Owner Account',
-      short: 'Transfer From Owner',
+      short: 'Owner → Bank',
       badge: 'bg-info text-dark',
       effect: 'credit',
-      help: 'Owner/direct expense bank se company bank me transfer. Pending balance kam hoga.',
-      bankType: 'transfer'
+      help: 'Owner/direct expense bank se business bank me transfer. Pending kam hoga; extra advance ban sakta hai.',
+      bankType: 'transfer',
+      dbType: 'bank_transfer_from_owner',
+      systemCategory: 'Bank Transfer from Owner'
     },
     expense_settled: {
       label: 'Expense Bill Settled',
       short: 'Expense Settled',
       badge: 'bg-primary',
       effect: 'credit',
-      help: 'Owner ne jo cash liya tha us ka kharcha/bill adjust hua. Pending kam hoga aur P&L me expense add hoga.',
-      bankType: 'expense'
+      help: 'Owner ne jo cash liya tha us ka bill/expense adjust hua. Pending kam hoga aur Profit & Loss me expense add hoga.',
+      bankType: 'expense',
+      dbType: 'expense_settled',
+      systemCategory: 'Direct Expense'
     }
   };
+
+  const ADVANCE_RECEIVED_CAT = 'Owner Advance Received';
+  const ADVANCE_RETURN_CAT = 'Owner Advance Return';
 
   const sb = () => window.supabaseClient;
   const num = v => {
@@ -59,9 +94,22 @@
   const fmt = n => Number(n || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const today = () => new Date().toISOString().slice(0, 10);
   const esc = s => String(s ?? '').replace(/[&<>'"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' }[c]));
-  const typeCfg = t => TYPES[t] || TYPES.cash_given;
-  const debitOf = r => typeCfg(r.entry_type).effect === 'debit' ? num(r.amount) : 0;
-  const creditOf = r => typeCfg(r.entry_type).effect === 'credit' ? num(r.amount) : 0;
+
+  function uiTypeOf(rowOrType) {
+    if (typeof rowOrType === 'string') return TYPES[rowOrType] ? rowOrType : 'credit_given';
+    const r = rowOrType || {};
+    const cat = String(r.expense_category || '').trim();
+    if (r.entry_type === 'cash_given' && cat === ADVANCE_RETURN_CAT) return 'advance_return';
+    if (r.entry_type === 'cash_received' && cat === ADVANCE_RECEIVED_CAT) return 'advance_received';
+    if (r.entry_type === 'cash_given') return 'credit_given';
+    if (r.entry_type === 'cash_received') return 'vasooli_received';
+    if (TYPES[r.entry_type]) return r.entry_type;
+    return 'credit_given';
+  }
+  const typeCfg = x => TYPES[uiTypeOf(x)] || TYPES.credit_given;
+  const debitOf = r => typeCfg(r).effect === 'debit' ? num(r.amount) : 0;
+  const creditOf = r => typeCfg(r).effect === 'credit' ? num(r.amount) : 0;
+  const dbTypeFor = ui => (TYPES[ui] || TYPES.credit_given).dbType;
 
   window.addEventListener('DOMContentLoaded', () => waitReady(init));
 
@@ -82,7 +130,8 @@
     document.getElementById('filter-from').value = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
     document.getElementById('filter-to').value = today();
 
-    await Promise.all([loadBanks(), loadDirEntries()]);
+    await loadBanks();
+    await loadDirEntries();
   }
 
   function missingColumn(message) {
@@ -190,7 +239,7 @@
     filteredEntries = allEntries.filter(r => {
       if (from && r.entry_date < from) return false;
       if (to && r.entry_date > to) return false;
-      if (type && r.entry_type !== type) return false;
+      if (type && uiTypeOf(r) !== type) return false;
       if (bank && String(r.bank_id || '') !== String(bank) && String(r.to_bank_id || '') !== String(bank)) return false;
       return true;
     });
@@ -210,6 +259,12 @@
     return map;
   }
 
+  function currentBalance(excludeId = '') {
+    return allEntries
+      .filter(r => !excludeId || String(r.id) !== String(excludeId))
+      .reduce((s,r) => s + debitOf(r) - creditOf(r), 0);
+  }
+
   function renderEntries() {
     const tbody = document.getElementById('dir-tbody');
     if (!filteredEntries.length) {
@@ -223,16 +278,18 @@
     const start = (currentPage - 1) * pageSize;
     const rows = filteredEntries.slice(start, start + pageSize);
     tbody.innerHTML = rows.map(r => {
-      const cfg = typeCfg(r.entry_type);
+      const cfg = typeCfg(r);
       const debit = debitOf(r);
       const credit = creditOf(r);
       const bank = banks.find(b => String(b.id) === String(r.bank_id));
       const toBank = banks.find(b => String(b.id) === String(r.to_bank_id));
       const mode = modeText(r, bank, toBank);
       const bal = balMap.get(String(r.id)) || 0;
+      const category = r.expense_category && !['Credit / Cash Given','Vasooli / Payment Received',ADVANCE_RECEIVED_CAT,ADVANCE_RETURN_CAT,'Bank Transfer to Owner','Bank Transfer from Owner'].includes(r.expense_category)
+        ? `<div class="small text-muted">${esc(r.expense_category)}</div>` : '';
       return `<tr class="dir-row">
         <td>${formatDate(r.entry_date)}</td>
-        <td><span class="badge type-pill ${cfg.badge}">${esc(cfg.short)}</span></td>
+        <td><span class="badge type-pill ${cfg.badge}">${esc(cfg.short)}</span>${category}</td>
         <td class="small">${mode}</td>
         <td class="text-end text-danger fw-semibold">${debit ? 'Rs. ' + fmt(debit) : '—'}</td>
         <td class="text-end text-success fw-semibold">${credit ? 'Rs. ' + fmt(credit) : '—'}</td>
@@ -267,9 +324,9 @@
   };
 
   function modeText(r, bank, toBank) {
-    const t = r.entry_type;
-    if (t === 'bank_transfer_to_owner') return `${esc(bank?.name || 'From Bank')} → ${esc(toBank?.name || 'Owner Bank')}`;
-    if (t === 'bank_transfer_from_owner') return `${esc(bank?.name || 'Owner Bank')} → ${esc(toBank?.name || 'To Bank')}`;
+    const ui = uiTypeOf(r);
+    if (ui === 'bank_transfer_to_owner') return `${esc(bank?.name || 'Business Bank')} → ${esc(toBank?.name || 'Owner Bank')}`;
+    if (ui === 'bank_transfer_from_owner') return `${esc(bank?.name || 'Owner Bank')} → ${esc(toBank?.name || 'Business Bank')}`;
     if (r.payment_mode === 'bank') return esc(bank?.name || 'Bank');
     if (r.payment_mode === 'adjustment') return 'Expense Adjustment';
     return 'Cash';
@@ -281,14 +338,15 @@
     const totalDebit = allEntries.reduce((s,r) => s + debitOf(r), 0);
     const totalCredit = allEntries.reduce((s,r) => s + creditOf(r), 0);
     const balance = totalDebit - totalCredit;
+    const pending = Math.max(balance, 0);
+    const advance = Math.max(-balance, 0);
     const monthRows = allEntries.filter(r => String(r.entry_date || '').slice(0,7) === month);
-    const mDebit = monthRows.reduce((s,r) => s + debitOf(r), 0);
     const mCredit = monthRows.reduce((s,r) => s + creditOf(r), 0);
-    const mExpense = monthRows.filter(r => r.entry_type === 'expense_settled').reduce((s,r) => s + num(r.amount), 0);
+    const mExpense = monthRows.filter(r => uiTypeOf(r) === 'expense_settled').reduce((s,r) => s + num(r.amount), 0);
 
-    document.getElementById('stat-balance').textContent = `Rs. ${fmt(Math.abs(balance))}`;
-    document.getElementById('stat-balance-note').textContent = balance > 0 ? 'Pending from owner/dir expense' : balance < 0 ? 'Owner advance/credit' : 'Clear';
-    document.getElementById('stat-debit').textContent = `Rs. ${fmt(mDebit)}`;
+    document.getElementById('stat-balance').textContent = `Rs. ${fmt(pending)}`;
+    document.getElementById('stat-balance-note').textContent = pending > 0 ? 'Owner/Dir Expense se lena' : 'No pending balance';
+    document.getElementById('stat-debit').textContent = `Rs. ${fmt(advance)}`;
     document.getElementById('stat-credit').textContent = `Rs. ${fmt(mCredit)}`;
     document.getElementById('stat-expense').textContent = `Rs. ${fmt(mExpense)}`;
   }
@@ -297,23 +355,27 @@
     const el = document.getElementById('dir-bank-summary');
     if (!banks.length) { el.innerHTML = '<div class="text-center text-muted small py-3">No banks found.</div>'; return; }
     const map = new Map();
-    banks.forEach(b => map.set(String(b.id), { bank: b, debit: 0, credit: 0 }));
+    banks.forEach(b => map.set(String(b.id), { bank: b, out: 0, in: 0 }));
     allEntries.forEach(r => {
-      const debit = debitOf(r), credit = creditOf(r);
-      if (r.bank_id && map.has(String(r.bank_id))) {
-        if (r.entry_type === 'bank_transfer_from_owner') map.get(String(r.bank_id)).credit += credit;
-        else map.get(String(r.bank_id)).debit += debit;
+      const ui = uiTypeOf(r), amount = num(r.amount);
+      if (r.payment_mode === 'bank' && r.bank_id && map.has(String(r.bank_id))) {
+        if (typeCfg(r).effect === 'debit') map.get(String(r.bank_id)).out += amount;
+        else map.get(String(r.bank_id)).in += amount;
       }
-      if (r.to_bank_id && map.has(String(r.to_bank_id))) {
-        if (r.entry_type === 'bank_transfer_to_owner') map.get(String(r.to_bank_id)).debit += debit;
-        else map.get(String(r.to_bank_id)).credit += credit;
+      if (ui === 'bank_transfer_to_owner') {
+        if (r.bank_id && map.has(String(r.bank_id))) map.get(String(r.bank_id)).out += amount;
+        if (r.to_bank_id && map.has(String(r.to_bank_id))) map.get(String(r.to_bank_id)).in += amount;
+      }
+      if (ui === 'bank_transfer_from_owner') {
+        if (r.bank_id && map.has(String(r.bank_id))) map.get(String(r.bank_id)).out += amount;
+        if (r.to_bank_id && map.has(String(r.to_bank_id))) map.get(String(r.to_bank_id)).in += amount;
       }
     });
-    const rows = [...map.values()].filter(x => x.debit || x.credit).slice(0, 8);
+    const rows = [...map.values()].filter(x => x.out || x.in).slice(0, 8);
     if (!rows.length) { el.innerHTML = '<div class="text-center text-muted small py-3">No bank movement yet.</div>'; return; }
     el.innerHTML = rows.map(x => `<div class="border-bottom py-2">
       <div class="fw-semibold">${esc(x.bank.name)}</div>
-      <div class="small text-muted d-flex justify-content-between"><span>Debit Rs. ${fmt(x.debit)}</span><span>Credit Rs. ${fmt(x.credit)}</span></div>
+      <div class="small text-muted d-flex justify-content-between"><span>Out Rs. ${fmt(x.out)}</span><span>In Rs. ${fmt(x.in)}</span></div>
     </div>`).join('');
   }
 
@@ -334,12 +396,13 @@
     document.getElementById('modal-dir-title').textContent = id ? 'Edit Dir Expense Entry' : 'New Dir Expense Entry';
     const r = id ? allEntries.find(x => String(x.id) === String(id)) : null;
     document.getElementById('dir-date').value = r?.entry_date || today();
-    document.getElementById('dir-type').value = r?.entry_type || 'cash_given';
-    document.getElementById('dir-mode').value = r?.payment_mode || 'cash';
+    document.getElementById('dir-type').value = r ? uiTypeOf(r) : 'credit_given';
+    document.getElementById('dir-mode').value = r?.payment_mode && ['cash','bank'].includes(r.payment_mode) ? r.payment_mode : 'cash';
     document.getElementById('dir-bank').value = r?.bank_id || '';
     document.getElementById('dir-to-bank').value = r?.to_bank_id || '';
     document.getElementById('dir-amount').value = r?.amount || '';
-    document.getElementById('dir-expense-category').value = r?.expense_category || '';
+    const ui = r ? uiTypeOf(r) : 'credit_given';
+    document.getElementById('dir-expense-category').value = ui === 'expense_settled' ? (r?.expense_category || '') : '';
     document.getElementById('dir-reference').value = r?.reference_no || '';
     document.getElementById('dir-note').value = r?.note || '';
     onDirTypeChange();
@@ -347,18 +410,21 @@
   };
 
   window.onDirTypeChange = function () {
-    const type = document.getElementById('dir-type').value;
+    const ui = document.getElementById('dir-type').value;
     const mode = document.getElementById('dir-mode').value;
-    const isTransfer = type === 'bank_transfer_to_owner' || type === 'bank_transfer_from_owner';
-    const isExpense = type === 'expense_settled';
-    document.getElementById('dir-type-help').textContent = typeCfg(type).help;
+    const isTransfer = ui === 'bank_transfer_to_owner' || ui === 'bank_transfer_from_owner';
+    const isExpense = ui === 'expense_settled';
+    document.getElementById('dir-type-help').textContent = typeCfg(ui).help;
     document.getElementById('dir-mode-wrap').style.display = isTransfer || isExpense ? 'none' : '';
     document.getElementById('dir-bank-wrap').style.display = isTransfer || mode === 'bank' ? '' : 'none';
     document.getElementById('dir-to-bank-wrap').style.display = isTransfer ? '' : 'none';
     document.getElementById('dir-expense-category-wrap').style.display = isExpense ? '' : 'none';
     if (isTransfer) {
-      document.getElementById('dir-bank-label').textContent = type === 'bank_transfer_to_owner' ? 'From Bank' : 'From Owner Bank';
-      document.getElementById('dir-to-bank-label').textContent = type === 'bank_transfer_to_owner' ? 'To Owner Bank' : 'To Bank';
+      document.getElementById('dir-bank-label').textContent = ui === 'bank_transfer_to_owner' ? 'From Business Bank' : 'From Owner Bank Account';
+      document.getElementById('dir-to-bank-label').textContent = ui === 'bank_transfer_to_owner' ? 'To Owner Bank Account' : 'To Business Bank';
+    } else if (mode === 'bank') {
+      if (ui === 'credit_given' || ui === 'advance_return') document.getElementById('dir-bank-label').textContent = 'Paid From Bank';
+      else document.getElementById('dir-bank-label').textContent = 'Received In Bank';
     } else {
       document.getElementById('dir-bank-label').textContent = 'Bank';
     }
@@ -366,17 +432,20 @@
 
   window.saveDirEntry = async function () {
     const id = document.getElementById('dir-id').value;
-    const type = document.getElementById('dir-type').value;
+    const ui = document.getElementById('dir-type').value;
+    const cfg = typeCfg(ui);
     const amount = num(document.getElementById('dir-amount').value);
     const entryDate = document.getElementById('dir-date').value;
-    const isTransfer = type === 'bank_transfer_to_owner' || type === 'bank_transfer_from_owner';
-    const isExpense = type === 'expense_settled';
+    const isTransfer = ui === 'bank_transfer_to_owner' || ui === 'bank_transfer_from_owner';
+    const isExpense = ui === 'expense_settled';
     const mode = isTransfer ? 'bank_transfer' : isExpense ? 'adjustment' : document.getElementById('dir-mode').value;
     const bankId = (isTransfer || mode === 'bank') ? (document.getElementById('dir-bank').value || null) : null;
     const toBankId = isTransfer ? (document.getElementById('dir-to-bank').value || null) : null;
-    const expenseCategory = isExpense ? (document.getElementById('dir-expense-category').value.trim() || 'Direct Expense') : '';
     const referenceNo = document.getElementById('dir-reference').value.trim();
     const note = document.getElementById('dir-note').value.trim();
+    const expenseCategory = isExpense
+      ? (document.getElementById('dir-expense-category').value.trim() || 'Direct Expense')
+      : cfg.systemCategory;
 
     if (!entryDate) { toast('Date is required.', 'warning'); return; }
     if (!amount || amount <= 0) { toast('Amount must be greater than 0.', 'warning'); return; }
@@ -384,9 +453,28 @@
     if (isTransfer && !toBankId) { toast('Please select second bank for transfer.', 'warning'); return; }
     if (isTransfer && String(bankId) === String(toBankId)) { toast('From Bank and To Bank cannot be same.', 'warning'); return; }
 
+    const balBefore = currentBalance(id);
+    const pending = Math.max(balBefore, 0);
+    const advance = Math.max(-balBefore, 0);
+    if (ui === 'advance_return') {
+      if (advance <= 0) { toast('Owner advance balance available nahi hai. Agar owner new cash le raha hai to Credit / Cash Given option use karo.', 'warning'); return; }
+      if (amount > advance + 0.01) { toast(`Advance return Rs. ${fmt(advance)} se zyada nahi ho sakta. Extra amount ke liye Credit / Cash Given option use karo.`, 'warning'); return; }
+    }
+    if (ui === 'expense_settled') {
+      if (pending <= 0) { toast('Pending balance nahi hai. Direct expense ke liye Transactions Expense page use karo.', 'warning'); return; }
+      if (amount > pending + 0.01) { toast(`Expense settlement pending balance Rs. ${fmt(pending)} se zyada nahi ho sakti.`, 'warning'); return; }
+    }
+    if ((ui === 'vasooli_received' || ui === 'bank_transfer_from_owner') && amount > pending + 0.01 && pending > 0) {
+      const extra = amount - pending;
+      if (!confirm(`Vasooli pending se Rs. ${fmt(extra)} zyada hai. Extra amount owner advance/credit ban jaye ga. Continue?`)) return;
+    }
+    if (ui === 'advance_received' && pending > 0) {
+      if (!confirm(`Abhi pending Rs. ${fmt(pending)} hai. Owner advance entry balance ko pehle pending se adjust karegi, extra advance banega. Continue?`)) return;
+    }
+
     const baseRow = {
       entry_date: entryDate,
-      entry_type: type,
+      entry_type: dbTypeFor(ui),
       amount,
       payment_mode: mode,
       bank_id: bankId,
@@ -402,7 +490,6 @@
 
     if (id) {
       const old = allEntries.find(x => String(x.id) === String(id));
-      // Linked finance rows are regenerated on edit where possible to keep amounts clean.
       await cleanupLinkedRows(old);
       const { data, error } = await safeUpdate('direct_expense_entries', { ...baseRow, cash_deposit_id: null, transaction_id: null }, id, removable);
       if (error) { toast('Error saving entry: ' + error.message, 'danger'); return; }
@@ -421,13 +508,13 @@
 
   async function createLinkedRows(row) {
     if (!row?.id) return;
-    const type = row.entry_type;
-    const cfg = typeCfg(type);
+    const cfg = typeCfg(row);
+    const ui = uiTypeOf(row);
     let cashDepositId = null;
     let transactionId = null;
 
     if (row.payment_mode === 'bank' || row.payment_mode === 'bank_transfer') {
-      const party = type === 'bank_transfer_to_owner' ? 'Dir Expense / Owner Bank' : type === 'bank_transfer_from_owner' ? 'Owner Bank / Dir Expense' : 'Dir Expense Khata';
+      const party = ui === 'bank_transfer_to_owner' ? 'Dir Expense / Owner Bank' : ui === 'bank_transfer_from_owner' ? 'Owner Bank / Dir Expense' : cfg.label;
       cashDepositId = await safeInsertCashDeposit({
         deposit_date: row.entry_date,
         bank_id: row.bank_id,
@@ -445,7 +532,7 @@
       });
     }
 
-    if (type === 'expense_settled') {
+    if (ui === 'expense_settled') {
       transactionId = await safeInsertExpenseTransaction({
         transaction_type: 'Expense',
         amount: row.amount,
@@ -495,10 +582,12 @@
     const totalDebit = filteredEntries.reduce((s,r) => s + debitOf(r), 0);
     const totalCredit = filteredEntries.reduce((s,r) => s + creditOf(r), 0);
     const balance = allEntries.reduce((s,r) => s + debitOf(r) - creditOf(r), 0);
+    const pending = Math.max(balance, 0);
+    const advance = Math.max(-balance, 0);
     const from = document.getElementById('filter-from').value || 'Start';
     const to = document.getElementById('filter-to').value || 'Today';
     const rows = filteredEntries.map(r => {
-      const cfg = typeCfg(r.entry_type);
+      const cfg = typeCfg(r);
       const bank = banks.find(b => String(b.id) === String(r.bank_id));
       const toBank = banks.find(b => String(b.id) === String(r.to_bank_id));
       return `<tr>
@@ -516,11 +605,11 @@
       <h3 style="margin:0 0 12px;">Dir Expense Khata Report</h3>
       <div style="font-size:12px;margin-bottom:10px;">Period: ${esc(from)} to ${esc(to)} | Printed: ${new Date().toLocaleString('en-PK')}</div>
       <table style="width:100%;border-collapse:collapse;margin-bottom:12px;font-size:12px;">
-        <tr><th style="border:1px solid #333;padding:6px;text-align:left;">Total Debit/Given</th><th style="border:1px solid #333;padding:6px;text-align:left;">Total Credit/Received</th><th style="border:1px solid #333;padding:6px;text-align:left;">Current Balance</th></tr>
-        <tr><td style="border:1px solid #333;padding:6px;">Rs. ${fmt(totalDebit)}</td><td style="border:1px solid #333;padding:6px;">Rs. ${fmt(totalCredit)}</td><td style="border:1px solid #333;padding:6px;">Rs. ${fmt(Math.abs(balance))} ${balance > 0 ? 'Pending' : balance < 0 ? 'Advance' : 'Clear'}</td></tr>
+        <tr><th style="border:1px solid #333;padding:6px;text-align:left;">Total Debit/Given</th><th style="border:1px solid #333;padding:6px;text-align:left;">Total Credit/Vasooli</th><th style="border:1px solid #333;padding:6px;text-align:left;">Pending</th><th style="border:1px solid #333;padding:6px;text-align:left;">Owner Advance</th></tr>
+        <tr><td style="border:1px solid #333;padding:6px;">Rs. ${fmt(totalDebit)}</td><td style="border:1px solid #333;padding:6px;">Rs. ${fmt(totalCredit)}</td><td style="border:1px solid #333;padding:6px;">Rs. ${fmt(pending)}</td><td style="border:1px solid #333;padding:6px;">Rs. ${fmt(advance)}</td></tr>
       </table>
       <table style="width:100%;border-collapse:collapse;font-size:11px;">
-        <thead><tr style="background:#eef2ff;"><th style="border:1px solid #333;padding:5px;">Date</th><th style="border:1px solid #333;padding:5px;">Type</th><th style="border:1px solid #333;padding:5px;">Mode/Bank</th><th style="border:1px solid #333;padding:5px;">Debit</th><th style="border:1px solid #333;padding:5px;">Credit</th><th style="border:1px solid #333;padding:5px;">Ref</th><th style="border:1px solid #333;padding:5px;">Note</th></tr></thead>
+        <thead><tr style="background:#eef2ff;"><th style="border:1px solid #333;padding:5px;">Date</th><th style="border:1px solid #333;padding:5px;">Type</th><th style="border:1px solid #333;padding:5px;">Mode/Bank</th><th style="border:1px solid #333;padding:5px;">Debit/Given</th><th style="border:1px solid #333;padding:5px;">Credit/Vasooli</th><th style="border:1px solid #333;padding:5px;">Ref</th><th style="border:1px solid #333;padding:5px;">Note</th></tr></thead>
         <tbody>${rows || '<tr><td colspan="7" style="border:1px solid #333;padding:8px;text-align:center;">No records</td></tr>'}</tbody>
       </table>
     </div>`;
