@@ -181,7 +181,7 @@
                   <th class="text-end">Rate</th>
                   <th class="text-end">Gross Sale</th>
                   <th class="text-end">Udhaar (−)</th>
-                  <th class="text-end">✅ Cash Sale</th>
+                  <th class="text-end">✅ Cash in Hand</th>
                   <th class="text-center">Credit Match</th>
                   <th class="text-center no-print">Actions</th>
                 </tr>
@@ -334,8 +334,9 @@
               <input type="number" id="edit-liters" class="form-control" step="0.001" oninput="DR.calcEditBadge()">
             </div>
             <div class="col-6">
-              <label class="form-label small fw-semibold">Udhaar Sale (Rs)</label>
+              <label class="form-label small fw-semibold">Cash in Hand (Rs)</label>
               <input type="number" id="edit-udhaar" class="form-control" step="0.01" oninput="DR.calcEditBadge()">
+              <small class="text-muted">Credit auto: Gross - Cash in Hand</small>
             </div>
             <div class="col-6">
               <label class="form-label small fw-semibold">Testing/Other (L)</label>

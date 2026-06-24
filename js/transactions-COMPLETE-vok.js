@@ -340,7 +340,7 @@
       { key:'sale',    color:'#198754', modalId:'newSaleModal',    custFilter: ()=>true },
       { key:'vasooli', color:'#0d6efd', modalId:'vasooliModal',    custFilter: ()=>true },
       { key:'advance', color:'#6f42c1', modalId:'cashAdvanceModal',custFilter: ()=>true },
-      { key:'expense', color:'#e67e22', modalId:'expenseModal',    custFilter: c=>c.category!=='Owner' },
+      { key:'expense', color:'#e67e22', modalId:'expenseModal',    custFilter: ()=>true },
     ];
     configs.forEach(cfg => {
       buildSearchDropdown({
@@ -401,7 +401,7 @@
       initAllDropdowns();
       const fc=el('filter-customer');
       if(fc) fc.innerHTML='<option value="">All Customers</option>'+
-        allCustomers.filter(c=>c.category!=='Owner').map(c=>`<option value="${c.id}">${c.sr_no} - ${c.name}</option>`).join('');
+        allCustomers.map(c=>`<option value="${c.id}">${c.sr_no} - ${c.name}${c.category==='Owner'?' (Owner)':''}</option>`).join('');
     } catch(e){ console.error('loadCustomers:',e); }
   }
 
@@ -981,27 +981,37 @@ ${bodyHtml}
     if(!account){ alert('Account select karein'); return; }
     if(!expDate){ alert('Taareekh (date) enter karein'); return; }
     try{
-      let custId=null;
-      if(cust){
-        custId=parseInt(cust.id);
-      } else {
-        const{data:owner}=await supabase.from('customers').select('id').eq('category','Owner').maybeSingle();
-        if(owner){ custId=owner.id; }
-        else{
-          const{data:no,error:ce}=await supabase.from('customers')
-            .insert([{sr_no:0,name:'Owner',category:'Owner',balance:0}]).select().single();
-          if(ce) throw ce; custId=no.id;
-        }
-      }
+      // Expense ka khata rule:
+      // - Agar customer/owner select hai: ye expense us account ke naam par chali jayegi aur balance + hoga.
+      // - Agar blank hai: sirf business P&L expense save hogi, kisi owner/customer balance ko touch nahi karegi.
+      let custId = cust ? parseInt(cust.id) : null;
+      const oldBal = cust ? (parseFloat(cust.balance)||0) : 0;
+      const newBal = cust ? oldBal + amount : null;
       const createdAt = new Date(expDate + 'T12:00:00').toISOString();
-      await safeInsertTransaction({
-        customer_id:custId, transaction_type:'Expense', amount, charges:amount,
+
+      const tx = {
+        ...(custId ? { customer_id:custId } : {}),
+        transaction_type:'Expense', amount, charges:amount,
         expense_type:expType, expense_account:account,
-        description:`${expType}: ${description} (From: ${account})`,
+        description:`${expType}: ${description} (From: ${account})${cust ? balanceNote(oldBal, amount, newBal) : ''}`,
         created_at: createdAt
-      });
-      showToast('success','Kamyab!','Expense record ho gaya!');
+      };
+      if(cust){
+        Object.assign(tx, {
+          balance_before: oldBal, balance_after: newBal,
+          customer_balance_before: oldBal, customer_balance_after: newBal,
+          balance_effect: amount
+        });
+      }
+
+      await safeInsertTransaction(tx);
+      if(cust){
+        await supabase.from('customers').update({balance:newBal}).eq('id',cust.id);
+        const lc=allCustomers.find(c=>c.id==cust.id); if(lc) lc.balance=newBal;
+      }
+      showToast('success','Kamyab!', cust ? `Expense record ho gaya! ${cust.name} balance Rs.${fmt(newBal)}` : 'Business expense record ho gaya!');
       closeModal('expenseModal'); selectedCustomers.expense=null;
+      await loadCustomers();
       await loadTransactions();
     }catch(e){ alert('Expense Error: '+e.message); }
   }
@@ -1228,12 +1238,27 @@ ${adv.notes?`<div class="row"><span class="lbl">Notes</span><span class="val">${
     }catch(e){ alert('Error: '+e.message); }
   };
 
+  async function reverseCustomerBalanceFromTransaction(t){
+    if(!t || !t.customer_id) return;
+    const effect = parseFloat(t.balance_effect);
+    if(isNaN(effect) || effect === 0) return;
+    try{
+      const { data: c } = await supabase.from('customers').select('id,balance').eq('id', t.customer_id).maybeSingle();
+      if(!c) return;
+      const next = (parseFloat(c.balance)||0) - effect;
+      await supabase.from('customers').update({ balance: next }).eq('id', c.id);
+    }catch(e){ console.warn('Balance reverse skipped:', e.message); }
+  }
+
   window.deleteTransaction=async function(id){
     if(!confirm('Delete karein?')) return;
     try{
+      const { data: oldTxn } = await supabase.from('transactions').select('id,customer_id,balance_effect').eq('id',id).maybeSingle();
       const{error}=await supabase.from('transactions').delete().eq('id',id);
       if(error) throw error;
-      showToast('success','Deleted','Transaction delete ho gaya!');
+      await reverseCustomerBalanceFromTransaction(oldTxn);
+      showToast('success','Deleted','Transaction delete ho gaya aur agar khata effect tha to balance reverse ho gaya!');
+      await loadCustomers();
       await loadTransactions();
     }catch(e){ alert('Error: '+e.message); }
   };

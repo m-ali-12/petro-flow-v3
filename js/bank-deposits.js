@@ -544,6 +544,78 @@
     await loadDeposits();
   };
 
+
+
+  // ── A4 Print Report ─────────────────────────────────────────────
+  window.printBankDepositReport = function () {
+    const from = document.getElementById('filter-from')?.value || '';
+    const to   = document.getElementById('filter-to')?.value || '';
+    const bankFilter = document.getElementById('filter-bank')?.value || '';
+    const typeFilter = document.getElementById('filter-type')?.value || '';
+    const bankName = bankFilter ? (allBanks.find(b => String(b.id) === String(bankFilter))?.name || 'Selected Bank') : 'All Banks';
+    const typeName = typeFilter ? typeCfg(typeFilter).label : 'All Types';
+
+    const rows = allDeposits || [];
+    const totals = rows.reduce((acc, d) => {
+      const t = typeOf(d);
+      const amt = Number(d.amount || 0);
+      if (t === 'transfer') { acc.transfer += amt; }
+      else if (isOutflow(t)) { acc.out += amt; }
+      else { acc.in += amt; }
+      acc.net = acc.in - acc.out;
+      return acc;
+    }, { in:0, out:0, transfer:0, net:0 });
+
+    const tableRows = rows.map((d, idx) => {
+      const bank  = allBanks.find(b => String(b.id) === String(d.bank_id));
+      const toBank= allBanks.find(b => String(b.id) === String(d.to_bank_id));
+      const t = typeOf(d);
+      const sign = isOutflow(t) ? '-' : (t === 'transfer' ? '↔' : '+');
+      return `<tr>
+        <td>${idx + 1}</td>
+        <td>${fmtDate(d.deposit_date)}</td>
+        <td>${esc(typeCfg(t).label)}</td>
+        <td>${esc(bank?.name || d.bank_name || 'Unknown')}</td>
+        <td>${esc(toBank?.name || '—')}</td>
+        <td class="amount ${isOutflow(t) ? 'out' : 'in'}">${sign} Rs. ${fmt(d.amount)}</td>
+        <td>${esc(d.party_name || d.deposited_by || '—')}</td>
+        <td>${esc(d.reference || '—')}</td>
+        <td>${esc(d.note || '—')}</td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="9" style="text-align:center;padding:20px;color:#777">No records found</td></tr>';
+
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Bank Finance Report</title>
+      <style>
+        @page{size:A4;margin:12mm} body{font-family:Arial,sans-serif;color:#111;font-size:11px}
+        .head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1e40af;padding-bottom:10px;margin-bottom:12px}
+        h2{margin:0;color:#1e40af;font-size:20px}.muted{color:#666}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:12px 0}
+        .card{border:1px solid #ddd;border-radius:8px;padding:8px}.label{font-size:10px;color:#555}.value{font-size:14px;font-weight:700}
+        table{width:100%;border-collapse:collapse;margin-top:10px} th{background:#eef2ff;color:#1e3a8a;text-align:left} th,td{border:1px solid #ddd;padding:6px;vertical-align:top}
+        .amount{text-align:right;font-weight:700}.in{color:#047857}.out{color:#dc2626}
+        .footer{margin-top:12px;text-align:center;color:#666;font-size:10px}
+      </style></head><body>
+      <div class="head">
+        <div><h2>Khalid & Sons Petroleum</h2><div class="muted">Bank Finance / Deposit Report</div></div>
+        <div class="muted" style="text-align:right">Printed: ${new Date().toLocaleString('en-PK')}<br>Period: ${from || '—'} to ${to || '—'}<br>Bank: ${esc(bankName)} | Type: ${esc(typeName)}</div>
+      </div>
+      <div class="grid">
+        <div class="card"><div class="label">Total In</div><div class="value in">Rs. ${fmt(totals.in)}</div></div>
+        <div class="card"><div class="label">Total Out</div><div class="value out">Rs. ${fmt(totals.out)}</div></div>
+        <div class="card"><div class="label">Transfer Volume</div><div class="value">Rs. ${fmt(totals.transfer)}</div></div>
+        <div class="card"><div class="label">Net</div><div class="value ${totals.net < 0 ? 'out' : 'in'}">Rs. ${fmt(totals.net)}</div></div>
+      </div>
+      <table><thead><tr><th>#</th><th>Date</th><th>Type</th><th>Bank</th><th>To Bank</th><th>Amount</th><th>Party/By</th><th>Ref</th><th>Note</th></tr></thead><tbody>${tableRows}</tbody></table>
+      <div class="footer">This report is generated from filtered Bank Finance entries.</div>
+      <script>window.onload=function(){window.print(); setTimeout(function(){window.close();}, 500);}</script>
+      </body></html>`;
+    const w = window.open('', '_blank');
+    if (!w) { toast('Popup blocked. Browser me popups allow karein.', 'warning'); return; }
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+  };
+
+
   window.resetFilters = function () {
     const now = new Date();
     const first = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;

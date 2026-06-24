@@ -869,6 +869,9 @@
         <td class="text-end fw-bold ${cash >= 0 ? 'profit-pos' : 'profit-neg'}">Rs.${fmt(cash)}</td>
         <td class="text-center">${reconBadge(_reconMap[reconKey(dateStr, r.fuel_type)])}</td>
         <td class="text-center no-print">
+          <button class="btn btn-sm btn-outline-primary me-1" onclick="DR.openEdit(${r.id})" title="Edit Reading">
+            <i class="bi bi-pencil"></i>
+          </button>
           <button class="btn btn-sm btn-outline-danger" onclick="DR.del(${r.id})" title="Delete">
             <i class="bi bi-trash"></i>
           </button>
