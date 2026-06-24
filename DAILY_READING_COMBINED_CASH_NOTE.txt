@@ -1,0 +1,13 @@
+Daily Reading Combined Cash Update
+
+- Daily Reading modal now has one Total Cash in Hand field for Petrol + Diesel combined cash.
+- Per-machine/fuel cash input is removed from new reading flow.
+- System calculates:
+  Total Gross Sale = Petrol gross + Diesel gross
+  Auto Credit = Total Gross Sale - Total Cash in Hand
+- Daily Reading is now stock master for the entered machine liters in combined cash mode:
+  Petrol/Diesel total machine liters are deducted from tanks when daily reading is saved.
+- Transactions > New Sale credit entries are used to assign the auto credit to customer accounts.
+- If the daily reading for that date is combined-cash mode, linked credit transactions do NOT deduct stock again.
+- If no daily reading credit exists for that date, transaction warns as UNLINKED and deducts stock.
+- Existing old data is not changed. No SQL is required.

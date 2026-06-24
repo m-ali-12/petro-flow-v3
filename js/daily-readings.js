@@ -135,11 +135,12 @@
     };
   }
 
-  // New workflow requested by user:
-  // Daily Reading me Credit amount type nahi karna. Operator total liters + actual
-  // Cash in Hand enter karega. Credit/Udhaar automatically calculate hoga:
-  // Credit = Gross Sale - Cash in Hand. Old saved data untouched rahega because
-  // purani rows description.meta.udhaar se render hoti rahengi.
+  // Combined cash workflow:
+  // Pump par Petrol + Diesel ka cash aksar mix hota hai. Operator per-machine
+  // liters enter karega aur ek hi Total Cash in Hand field bharay ga.
+  // Credit/Udhaar automatically day level par calculate hoga:
+  // Total Credit = Total Gross Sale - Total Cash in Hand.
+  // Old saved data untouched rahega because purani rows description.meta se render hoti rahengi.
   function calcFromCashInHand(totalLiters, rate, cashInputRaw) {
     const total = Math.max(0, parseFloat(totalLiters) || 0);
     const price = Math.max(0, parseFloat(rate) || 0);
@@ -152,6 +153,60 @@
     const credit = parseFloat(Math.max(0, gross - cash).toFixed(2));
     const overCash = parseFloat(Math.max(0, entered - gross).toFixed(2));
     return { gross, cash, credit, entered, overCash };
+  }
+
+
+
+  function calcCombinedTotals() {
+    let totalLiters = 0, gross = 0;
+    const rows = [];
+
+    function addFuel(fuel, count, prefix, rateId) {
+      const rate = parseFloat(el(rateId)?.value) || 0;
+      for (let i = 1; i <= count; i++) {
+        const liEl = el(`${prefix}-li-${i}`);
+        if (!liEl || liEl.value === '') continue;
+        const litersRaw = parseFloat(liEl.value);
+        if (isNaN(litersRaw) || litersRaw <= 0) continue;
+        const testing = parseFloat(el(`${prefix}-te-${i}`)?.value) || 0;
+        const liters = parseFloat(Math.max(0, litersRaw - testing).toFixed(3));
+        const rowGross = parseFloat((liters * rate).toFixed(2));
+        rows.push({ fuel, machine: i, litersRaw, testing, liters, rate, gross: rowGross });
+        totalLiters += liters;
+        gross += rowGross;
+      }
+    }
+
+    addFuel('Petrol', _petrolCount, 'p', 'add-petrol-price');
+    addFuel('Diesel', _dieselCount, 'd', 'add-diesel-price');
+
+    gross = parseFloat(gross.toFixed(2));
+    const raw = el('add-combined-cash')?.value ?? '';
+    const entered = String(raw).trim() === '' ? gross : Math.max(0, parseFloat(raw) || 0);
+    const cash = parseFloat(Math.min(gross, entered).toFixed(2));
+    const credit = parseFloat(Math.max(0, gross - cash).toFixed(2));
+    const overCash = parseFloat(Math.max(0, entered - gross).toFixed(2));
+
+    rows.forEach(r => {
+      const share = gross > 0 ? (r.gross / gross) : 0;
+      r.allocatedCash = parseFloat((cash * share).toFixed(2));
+      r.allocatedCredit = parseFloat((r.gross - r.allocatedCash).toFixed(2));
+    });
+
+    // Round adjustment so allocated cash total exactly matches cash in hand.
+    const allocatedSum = parseFloat(rows.reduce((sum, r) => sum + (r.allocatedCash || 0), 0).toFixed(2));
+    const diff = parseFloat((cash - allocatedSum).toFixed(2));
+    if (rows.length && diff) {
+      rows[rows.length - 1].allocatedCash = parseFloat(((rows[rows.length - 1].allocatedCash || 0) + diff).toFixed(2));
+      rows[rows.length - 1].allocatedCredit = parseFloat((rows[rows.length - 1].gross - rows[rows.length - 1].allocatedCash).toFixed(2));
+    }
+
+    return { rows, totalLiters: parseFloat(totalLiters.toFixed(3)), gross, cash, credit, entered, overCash };
+  }
+
+  function readingReconKey(row) {
+    const date = rowDate(row);
+    return row?.meta?.daily_combined_cash_mode ? reconKey(date, '__DAY__') : reconKey(date, row?.fuel_type || '');
   }
 
   function totalLitersForReading(row) {
@@ -195,6 +250,8 @@
 
   function buildCreditReconciliation(readings, creditRows) {
     const map = {};
+    const combinedDates = new Set();
+    const seenCombinedGroups = new Set();
 
     function ensure(date, fuel) {
       const key = reconKey(date, fuel);
@@ -208,9 +265,10 @@
           readingCount: 0,
           txnCount: 0,
           status: 'clear',
-          label: 'Cash Only',
+          label: fuel === '__DAY__' ? 'Day Cash Only' : 'Cash Only',
           amountDiff: 0,
-          litersDiff: 0
+          litersDiff: 0,
+          combinedMode: fuel === '__DAY__'
         };
       }
       return map[key];
@@ -220,17 +278,33 @@
       const date = rowDate(r);
       const fuel = r.fuel_type || r.meta?.fuel_type || '';
       if (!date || !fuel) return;
-      const bucket = ensure(date, fuel);
-      bucket.expectedAmount += parseFloat(r.meta?.udhaar) || 0;
-      bucket.expectedLiters += expectedCreditLitersForReading(r);
-      bucket.readingCount += 1;
+      const m = r.meta || {};
+
+      if (m.daily_combined_cash_mode) {
+        combinedDates.add(date);
+        const group = m.daily_group_key || `${date}|combined_cash`;
+        const bucket = ensure(date, '__DAY__');
+        if (!seenCombinedGroups.has(group)) {
+          bucket.expectedAmount += parseFloat(m.daily_combined_credit_total ?? m.udhaar) || 0;
+          // In mixed-cash mode credit is reconciled by amount at day level because
+          // fuel-wise cash split is not known at cash counter.
+          bucket.expectedLiters = 0;
+          bucket.readingCount += 1;
+          seenCombinedGroups.add(group);
+        }
+      } else {
+        const bucket = ensure(date, fuel);
+        bucket.expectedAmount += parseFloat(m.udhaar) || 0;
+        bucket.expectedLiters += expectedCreditLitersForReading(r);
+        bucket.readingCount += 1;
+      }
     });
 
     (creditRows || []).forEach(t => {
       const date = rowDate(t);
       const fuel = t.fuel_type || '';
       if (!date || !fuel) return;
-      const bucket = ensure(date, fuel);
+      const bucket = combinedDates.has(date) ? ensure(date, '__DAY__') : ensure(date, fuel);
       bucket.assignedAmount += amountForTxn(t);
       bucket.assignedLiters += litersForCreditTxn(t);
       bucket.txnCount += 1;
@@ -244,18 +318,18 @@
       b.amountDiff = parseFloat((b.expectedAmount - b.assignedAmount).toFixed(2));
       b.litersDiff = parseFloat((b.expectedLiters - b.assignedLiters).toFixed(3));
 
-      const amountTol = 2; // rupees rounding tolerance
-      const literTol = Math.max(0.1, Math.abs(b.expectedLiters) * 0.001); // 0.1L or 0.1%
+      const amountTol = 2;
+      const literTol = Math.max(0.1, Math.abs(b.expectedLiters) * 0.001);
 
       if (b.expectedAmount <= amountTol && b.assignedAmount <= amountTol) {
-        b.status = 'clear'; b.label = 'Cash Only';
+        b.status = 'clear'; b.label = b.combinedMode ? 'Day Cash Only' : 'Cash Only';
       } else if (b.expectedAmount <= amountTol && b.assignedAmount > amountTol) {
         b.status = 'unlinked'; b.label = 'Unlinked Credit';
       } else if (b.assignedAmount <= amountTol) {
         b.status = 'pending'; b.label = 'Pending Credit';
-      } else if (b.assignedAmount > b.expectedAmount + amountTol || (b.expectedLiters > 0 && b.assignedLiters > b.expectedLiters + literTol)) {
+      } else if (b.assignedAmount > b.expectedAmount + amountTol || (!b.combinedMode && b.expectedLiters > 0 && b.assignedLiters > b.expectedLiters + literTol)) {
         b.status = 'over'; b.label = 'Over Credit';
-      } else if (Math.abs(b.amountDiff) <= amountTol && (b.expectedLiters <= 0 || Math.abs(b.litersDiff) <= literTol)) {
+      } else if (Math.abs(b.amountDiff) <= amountTol && (b.combinedMode || b.expectedLiters <= 0 || Math.abs(b.litersDiff) <= literTol)) {
         b.status = 'matched'; b.label = 'Matched';
       } else {
         b.status = 'partial'; b.label = 'Partial';
@@ -281,6 +355,9 @@
 
   function stockDeductedLitersForReading(row) {
     const m = row?.meta || {};
+    if (m.stock_mode === 'full_machine_reading_combined_cash') {
+      return parseFloat(m.stock_deducted_liters ?? m.total_liters ?? row?.liters) || 0;
+    }
     if (m.stock_mode === 'cash_only_daily_reading') {
       return parseFloat(m.stock_deducted_liters ?? m.cash_liters ?? row?.liters) || 0;
     }
@@ -452,12 +529,9 @@
                 style="border:2px solid ${fuel==='Petrol'?'#198754':'#f1c40f'};">
             </div>
             <div class="col-md-4">
-              <label class="form-label small fw-semibold">
-                Cash in Hand (Rs)
-              </label>
-              <input type="number" id="${prefix}-ud-${num}" class="form-control"
-                step="0.01" placeholder="Blank = full cash" oninput="DR.calcMachine('${fuel}',${num})">
-              <small class="text-muted">Credit auto: Gross - Cash in Hand</small>
+              <label class="form-label small fw-semibold">Gross Preview</label>
+              <div class="form-control bg-light" id="${prefix}-gross-${num}" style="height:auto;min-height:38px;">Rs. 0.00</div>
+              <small class="text-muted">Cash total upar combined field me likhein</small>
             </div>
             <div class="col-md-4">
               <label class="form-label small fw-semibold">Testing (L)</label>
@@ -478,6 +552,7 @@
     if (el('petrol-machines-wrap')) el('petrol-machines-wrap').innerHTML = machineHTML('Petrol', 1);
     if (el('diesel-machines-wrap')) el('diesel-machines-wrap').innerHTML = machineHTML('Diesel', 1);
     if (el('grand-total-box')) el('grand-total-box').style.display = 'none';
+    if (el('add-combined-cash')) el('add-combined-cash').value = '';
     if (el('add-notes')) el('add-notes').value = '';
   }
 
@@ -504,36 +579,30 @@
     const cls = fuel.toLowerCase();
 
     const litersInput = parseFloat(el(`${p}-li-${num}`)?.value) || 0;
-    const cashRaw = el(`${p}-ud-${num}`)?.value ?? '';
     const te = parseFloat(el(`${p}-te-${num}`)?.value) || 0;
     const pr = parseFloat(el(fuel === 'Petrol' ? 'add-petrol-price' : 'add-diesel-price')?.value) || 0;
 
     const liters = Math.max(0, litersInput - te);
-    const calc = calcFromCashInHand(liters, pr, cashRaw);
-    const gross = calc.gross;
-    const cash = calc.cash;
-    const ud = calc.credit;
+    const gross = parseFloat((liters * pr).toFixed(2));
+    const grossBox = el(`${p}-gross-${num}`);
+    if (grossBox) grossBox.textContent = 'Rs. ' + fmt(gross);
 
     const badge = el(`calc-${cls}-${num}`);
     if (!badge) return;
 
     badge.innerHTML = `
       <div class="row text-center g-0">
-        <div class="col-3">
+        <div class="col-4">
           <div class="small text-muted">Liters (Net)</div>
           <div class="fw-bold text-primary">${fmtL(liters)} L</div>
         </div>
-        <div class="col-3">
+        <div class="col-4">
           <div class="small text-muted">Gross Sale</div>
           <div class="fw-bold">Rs.${fmt(gross)}</div>
         </div>
-        <div class="col-3">
-          <div class="small text-muted">Credit Auto (−)</div>
-          <div class="fw-bold text-danger">Rs.${fmt(ud)}</div>
-        </div>
-        <div class="col-3">
-          <div class="small text-muted">✅ Cash in Hand</div>
-          <div class="fw-bold ${cash >= 0 ? 'profit-pos' : 'profit-neg'}">Rs.${fmt(cash)}</div>
+        <div class="col-4">
+          <div class="small text-muted">Cash / Credit</div>
+          <div class="fw-bold text-muted">Combined cash se auto</div>
         </div>
       </div>`;
 
@@ -546,35 +615,17 @@
   };
 
   DR.updateGrandTotal = function() {
-    let totL = 0, totG = 0, totC = 0;
-
-    for (let i = 1; i <= _petrolCount; i++) {
-      if (!el(`p-li-${i}`)) continue;
-      const liInput = parseFloat(el(`p-li-${i}`)?.value) || 0;
-      const cashRaw = el(`p-ud-${i}`)?.value ?? '';
-      const te = parseFloat(el(`p-te-${i}`)?.value) || 0;
-      const pr = parseFloat(el('add-petrol-price')?.value) || 0;
-      const li = Math.max(0, liInput - te);
-      const calc = calcFromCashInHand(li, pr, cashRaw);
-      totL += li; totG += calc.gross; totC += calc.cash;
-    }
-    for (let i = 1; i <= _dieselCount; i++) {
-      if (!el(`d-li-${i}`)) continue;
-      const liInput = parseFloat(el(`d-li-${i}`)?.value) || 0;
-      const cashRaw = el(`d-ud-${i}`)?.value ?? '';
-      const te = parseFloat(el(`d-te-${i}`)?.value) || 0;
-      const pr = parseFloat(el('add-diesel-price')?.value) || 0;
-      const li = Math.max(0, liInput - te);
-      const calc = calcFromCashInHand(li, pr, cashRaw);
-      totL += li; totG += calc.gross; totC += calc.cash;
-    }
+    const combined = calcCombinedTotals();
 
     const gtBox = el('grand-total-box');
-    if (totG > 0 && gtBox) {
+    if (combined.gross > 0 && gtBox) {
       gtBox.style.display = '';
-      el('gt-liters').textContent = fmtL(totL) + ' L';
-      el('gt-gross').textContent  = 'Rs. ' + fmt(totG);
-      el('gt-cash').textContent   = 'Rs. ' + fmt(totC);
+      el('gt-liters').textContent = fmtL(combined.totalLiters) + ' L';
+      el('gt-gross').textContent  = 'Rs. ' + fmt(combined.gross);
+      if (el('gt-credit')) el('gt-credit').textContent = 'Rs. ' + fmt(combined.credit);
+      el('gt-cash').textContent   = 'Rs. ' + fmt(combined.cash);
+    } else if (gtBox) {
+      gtBox.style.display = 'none';
     }
   };
 
@@ -593,137 +644,68 @@
     const date = el('add-date')?.value;
     if (!date) { showToast('warning', 'Zaroorat!', 'Taareekh zaroor daalein'); return; }
 
-    const petrolRate = parseFloat(el('add-petrol-price')?.value) || 0;
-    const dieselRate = parseFloat(el('add-diesel-price')?.value) || 0;
-    const notes      = el('add-notes')?.value || '';
+    const notes = el('add-notes')?.value || '';
 
-    // User ID (optional, may be null)
     let userId = null;
     try {
       const { data: au } = await sb.auth.getUser();
       userId = au?.user?.id || null;
     } catch(e) { /* auth optional */ }
 
-    // PKT midnight timestamp
     const createdAt = businessTimestamp(date);
-    // Daily reading cash is business revenue, not Owner khata.
-    // Keep CashSale rows without customer_id so Owner balance does not change automatically.
-    const ownerId = null;
-    let totalCashForOwner = 0;
-
-    const inserts = [];
-
-    /* ── Petrol machines ── */
-    for (let i = 1; i <= _petrolCount; i++) {
-      const liEl = el(`p-li-${i}`);
-      if (!liEl || liEl.value === '') continue;
-      const litersRaw = parseFloat(liEl.value);
-      if (isNaN(litersRaw) || litersRaw <= 0) continue;
-
-      const te    = parseFloat(el(`p-te-${i}`)?.value) || 0;
-      const cashRaw = el(`p-ud-${i}`)?.value ?? '';
-      const liters = parseFloat(Math.max(0, litersRaw - te).toFixed(3));
-      const calc = calcFromCashInHand(liters, petrolRate, cashRaw);
-      const gross = calc.gross;
-      const cash = calc.cash;
-      const ud = calc.credit;
-      const split  = splitCashAndCreditLiters(liters, petrolRate, ud);
-      // Do not add daily cash to Owner khata; P&L reads this CashSale as income.
-      // Stock: only cash liters are deducted here; credit liters are deducted from Transactions > New Sale.
-
-      inserts.push({
-        ...(ownerId ? { customer_id: ownerId } : {}),
-        transaction_type: 'CashSale',
-        fuel_type:        'Petrol',
-        entry_method:     'machine_reading',
-        charges:          cash,
-        amount:           cash,
-        liters:           split.cashLiters,
-        unit_price:       petrolRate,
-        description:      JSON.stringify({
-          machine: i,
-          liters_input: litersRaw,
-          liters,
-          total_liters: split.totalLiters,
-          cash_liters: split.cashLiters,
-          credit_liters_machine: split.creditLiters,
-          stock_deducted_liters: split.cashLiters,
-          stock_mode: 'cash_only_daily_reading',
-          rate:    petrolRate,
-          gross,
-          udhaar:  ud,
-          cash_in_hand: cash,
-          cash_in_hand_entered: calc.entered,
-          cash_input_mode: 'cash_in_hand_auto_credit',
-          testing: te,
-          notes
-        }),
-        payment_method: 'Cash',
-        created_at:     createdAt,
-        ...(userId ? { user_id: userId } : {})
-      });
-    }
-
-    /* ── Diesel machines ── */
-    for (let i = 1; i <= _dieselCount; i++) {
-      const liEl = el(`d-li-${i}`);
-      if (!liEl || liEl.value === '') continue;
-      const litersRaw = parseFloat(liEl.value);
-      if (isNaN(litersRaw) || litersRaw <= 0) continue;
-
-      const te    = parseFloat(el(`d-te-${i}`)?.value) || 0;
-      const cashRaw = el(`d-ud-${i}`)?.value ?? '';
-      const liters = parseFloat(Math.max(0, litersRaw - te).toFixed(3));
-      const calc = calcFromCashInHand(liters, dieselRate, cashRaw);
-      const gross = calc.gross;
-      const cash = calc.cash;
-      const ud = calc.credit;
-      const split  = splitCashAndCreditLiters(liters, dieselRate, ud);
-      // Do not add daily cash to Owner khata; P&L reads this CashSale as income.
-      // Stock: only cash liters are deducted here; credit liters are deducted from Transactions > New Sale.
-
-      inserts.push({
-        ...(ownerId ? { customer_id: ownerId } : {}),
-        transaction_type: 'CashSale',
-        fuel_type:        'Diesel',
-        entry_method:     'machine_reading',
-        charges:          cash,
-        amount:           cash,
-        liters:           split.cashLiters,
-        unit_price:       dieselRate,
-        description:      JSON.stringify({
-          machine: i,
-          liters_input: litersRaw,
-          liters,
-          total_liters: split.totalLiters,
-          cash_liters: split.cashLiters,
-          credit_liters_machine: split.creditLiters,
-          stock_deducted_liters: split.cashLiters,
-          stock_mode: 'cash_only_daily_reading',
-          rate:    dieselRate,
-          gross,
-          udhaar:  ud,
-          cash_in_hand: cash,
-          cash_in_hand_entered: calc.entered,
-          cash_input_mode: 'cash_in_hand_auto_credit',
-          testing: te,
-          notes
-        }),
-        payment_method: 'Cash',
-        created_at:     createdAt,
-        ...(userId ? { user_id: userId } : {})
-      });
-    }
-
-    if (!inserts.length) {
-      showToast('warning', 'Zaroorat!', 'Kam az kam ek machine ki opening aur closing reading daalein');
+    const combined = calcCombinedTotals();
+    if (!combined.rows.length) {
+      showToast('warning', 'Zaroorat!', 'Kam az kam ek machine ki liters reading daalein');
       return;
     }
+    if (combined.overCash > 0) {
+      showToast('warning', 'Cash Check', `Cash in Hand gross sale se Rs.${fmt(combined.overCash)} zyada hai. System cash ko gross tak cap karega.`);
+    }
+
+    const groupKey = `${date}|combined_cash|${Date.now()}`;
+    const inserts = combined.rows.map(r => ({
+      transaction_type: 'CashSale',
+      fuel_type:        r.fuel,
+      entry_method:     'machine_reading',
+      charges:          r.allocatedCash,
+      amount:           r.allocatedCash,
+      // In combined-cash mode Daily Reading is the stock master, so full machine
+      // liters are saved/deducted here. Linked credit transactions manage khata only.
+      liters:           r.liters,
+      unit_price:       r.rate,
+      description:      JSON.stringify({
+        machine: r.machine,
+        liters_input: r.litersRaw,
+        liters: r.liters,
+        total_liters: r.liters,
+        cash_liters: r.liters,
+        credit_liters_machine: null,
+        stock_deducted_liters: r.liters,
+        stock_mode: 'full_machine_reading_combined_cash',
+        daily_combined_cash_mode: true,
+        daily_group_key: groupKey,
+        daily_combined_cash_total: combined.cash,
+        daily_combined_gross_total: combined.gross,
+        daily_combined_credit_total: combined.credit,
+        allocated_cash_in_hand: r.allocatedCash,
+        allocated_credit: r.allocatedCredit,
+        rate: r.rate,
+        gross: r.gross,
+        udhaar: r.allocatedCredit,
+        cash_in_hand: r.allocatedCash,
+        cash_in_hand_entered: combined.entered,
+        cash_input_mode: 'combined_cash_in_hand_day',
+        testing: r.testing,
+        notes
+      }),
+      payment_method: 'Cash',
+      created_at:     createdAt,
+      ...(userId ? { user_id: userId } : {})
+    }));
 
     try {
       const { error } = await sb.from('transactions').insert(inserts);
       if (error) throw error;
-      // Owner khata is not touched here. CashSale is included in Profit & Loss only.
 
       const stockByFuel = inserts.reduce((acc, row) => {
         let meta = {};
@@ -736,7 +718,7 @@
         await adjustTankStock(fuel, -litersToDeduct);
       }
 
-      showToast('success', 'Saved! ✅', `${inserts.length} machine reading(s) save ho gayi. Cash in hand ke mutabiq cash liters stock se minus ho gaye; auto credit liters Transactions page se minus honge.`);
+      showToast('success', 'Saved! ✅', `${inserts.length} machine reading(s) save ho gayi. Total machine liters stock se minus ho gaye; auto credit customer transactions se khata mein assign hoga.`);
 
       const modal = bootstrap.Modal.getInstance(el('addReadingModal'));
       if (modal) modal.hide();
@@ -867,7 +849,7 @@
         <td class="text-end">Rs.${fmt(gross)}</td>
         <td class="text-end text-danger">Rs.${fmt(udhaar)}</td>
         <td class="text-end fw-bold ${cash >= 0 ? 'profit-pos' : 'profit-neg'}">Rs.${fmt(cash)}</td>
-        <td class="text-center">${reconBadge(_reconMap[reconKey(dateStr, r.fuel_type)])}</td>
+        <td class="text-center">${reconBadge(_reconMap[readingReconKey(r)])}</td>
         <td class="text-center no-print">
           <button class="btn btn-sm btn-outline-primary me-1" onclick="DR.openEdit(${r.id})" title="Edit Reading">
             <i class="bi bi-pencil"></i>
@@ -1055,9 +1037,12 @@
     const gr = calc.gross;
     const cash = calc.cash;
     const ud = calc.credit;
-    const split = splitCashAndCreditLiters(li, pr, ud);
-
     const orig     = _rows.find(r => r.id === id);
+    const isCombined = !!orig?.meta?.daily_combined_cash_mode;
+    const split = isCombined
+      ? { totalLiters: li, cashLiters: li, creditLiters: 0 }
+      : splitCashAndCreditLiters(li, pr, ud);
+
     const origMeta = orig?.meta || {};
 
     const newMeta = {
@@ -1068,9 +1053,9 @@
       cash_liters: split.cashLiters,
       credit_liters_machine: split.creditLiters,
       stock_deducted_liters: split.cashLiters,
-      stock_mode: 'cash_only_daily_reading',
+      stock_mode: isCombined ? 'full_machine_reading_combined_cash' : 'cash_only_daily_reading',
       rate: pr,
-      gross: gr, udhaar: ud, cash_in_hand: cash, cash_in_hand_entered: calc.entered, cash_input_mode: 'cash_in_hand_auto_credit', testing: te
+      gross: gr, udhaar: ud, cash_in_hand: cash, cash_in_hand_entered: calc.entered, cash_input_mode: isCombined ? 'combined_cash_in_hand_day_edit' : 'cash_in_hand_auto_credit', testing: te
     };
 
     try {

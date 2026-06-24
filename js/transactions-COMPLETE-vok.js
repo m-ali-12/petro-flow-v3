@@ -131,7 +131,8 @@
       assignedAmount: 0,
       assignedLiters: 0,
       readingCount: 0,
-      txnCount: 0
+      txnCount: 0,
+      combinedMode: false
     };
     if(!saleDate || !fuelType) return bucket;
 
@@ -139,39 +140,72 @@
     const end   = saleDate + 'T23:59:59+05:00';
 
     try{
-      let dailyQ = supabase.from('transactions')
+      // Load all machine readings for date first. New Daily Reading mixed-cash mode
+      // stores total day credit across Petrol + Diesel, so validation must be day-level.
+      const {data: allReadings, error: allReadErr} = await supabase.from('transactions')
         .select('id, transaction_type, entry_method, fuel_type, charges, amount, liters, unit_price, description, created_at')
         .eq('transaction_type', 'CashSale')
         .eq('entry_method', 'machine_reading')
-        .eq('fuel_type', fuelType)
         .gte('created_at', start)
         .lte('created_at', end);
-      const {data: readings, error: readErr} = await dailyQ;
-      if(readErr) throw readErr;
+      if(allReadErr) throw allReadErr;
 
-      (readings || []).forEach(r => {
-        const m = _safeMeta(r.description);
-        const udhaar = parseFloat(m.udhaar) || 0;
-        const rate = parseFloat(m.rate || r.unit_price) || 0;
-        const creditLiters = parseFloat(m.credit_liters_machine) || (rate > 0 ? udhaar / rate : 0);
-        bucket.expectedAmount += udhaar;
-        bucket.expectedLiters += creditLiters;
-        bucket.readingCount += 1;
-      });
+      const readings = allReadings || [];
+      const combinedRows = readings.filter(r => _safeMeta(r.description).daily_combined_cash_mode);
 
-      const {data: txns, error: txErr} = await supabase.from('transactions')
-        .select('id, transaction_type, fuel_type, charges, amount, liters, unit_price, description, created_at')
-        .in('transaction_type', ['Credit','AdvanceUsed'])
-        .eq('fuel_type', fuelType)
-        .gte('created_at', start)
-        .lte('created_at', end);
-      if(txErr) throw txErr;
+      if(combinedRows.length){
+        bucket.combinedMode = true;
+        const seenGroups = new Set();
+        combinedRows.forEach(r => {
+          const m = _safeMeta(r.description);
+          const group = m.daily_group_key || `${saleDate}|combined_cash`;
+          if(seenGroups.has(group)) return;
+          bucket.expectedAmount += parseFloat(m.daily_combined_credit_total ?? m.udhaar) || 0;
+          bucket.readingCount += 1;
+          seenGroups.add(group);
+        });
 
-      (txns || []).forEach(t => {
-        bucket.assignedAmount += _money(t);
-        bucket.assignedLiters += _liters(t);
-        bucket.txnCount += 1;
-      });
+        // In combined-cash mode we reconcile customer credit by total amount for the whole day.
+        // Stock is already deducted by Daily Reading full machine liters, so linked credit rows
+        // must not deduct stock again.
+        const {data: txns, error: txErr} = await supabase.from('transactions')
+          .select('id, transaction_type, fuel_type, charges, amount, liters, unit_price, description, created_at')
+          .in('transaction_type', ['Credit','AdvanceUsed'])
+          .gte('created_at', start)
+          .lte('created_at', end);
+        if(txErr) throw txErr;
+
+        (txns || []).forEach(t => {
+          bucket.assignedAmount += _money(t);
+          bucket.assignedLiters += _liters(t);
+          bucket.txnCount += 1;
+        });
+      } else {
+        // Old workflow: credit amount was fuel-wise, so validate by same date + same fuel.
+        readings.filter(r => r.fuel_type === fuelType).forEach(r => {
+          const m = _safeMeta(r.description);
+          const udhaar = parseFloat(m.udhaar) || 0;
+          const rate = parseFloat(m.rate || r.unit_price) || 0;
+          const creditLiters = parseFloat(m.credit_liters_machine) || (rate > 0 ? udhaar / rate : 0);
+          bucket.expectedAmount += udhaar;
+          bucket.expectedLiters += creditLiters;
+          bucket.readingCount += 1;
+        });
+
+        const {data: txns, error: txErr} = await supabase.from('transactions')
+          .select('id, transaction_type, fuel_type, charges, amount, liters, unit_price, description, created_at')
+          .in('transaction_type', ['Credit','AdvanceUsed'])
+          .eq('fuel_type', fuelType)
+          .gte('created_at', start)
+          .lte('created_at', end);
+        if(txErr) throw txErr;
+
+        (txns || []).forEach(t => {
+          bucket.assignedAmount += _money(t);
+          bucket.assignedLiters += _liters(t);
+          bucket.txnCount += 1;
+        });
+      }
 
       bucket.expectedAmount = parseFloat(bucket.expectedAmount.toFixed(2));
       bucket.expectedLiters = parseFloat(bucket.expectedLiters.toFixed(3));
@@ -180,7 +214,6 @@
       return bucket;
     }catch(e){
       console.warn('Daily credit reconciliation check skipped:', e.message);
-      // If check fails because of old schema/network, do not block normal work.
       return bucket;
     }
   }
@@ -188,18 +221,19 @@
   async function validateCreditAgainstDailyReading({ saleDate, fuelType, amountToAdd, litersToAdd }){
     const amount = parseFloat(amountToAdd) || 0;
     const liters = parseFloat(litersToAdd) || 0;
-    if(!amount || !liters) return true;
+    if(!amount || !liters) return { ok:true, deductStock:true, linked:false };
 
     const b = await getDailyCreditBucket(saleDate, fuelType);
     const amountTol = 2;
     const literTol = Math.max(0.1, Math.abs(b.expectedLiters) * 0.001);
 
     if(b.expectedAmount <= amountTol){
-      return confirm(
-        `Daily Reading me ${saleDate} / ${fuelType} ka credit amount nahi mila.\n\n` +
+      const ok = confirm(
+        `Daily Reading me ${saleDate} ka credit amount nahi mila.\n\n` +
         `Ye credit sale UNLINKED save hogi aur stock se ${liters.toFixed(3)} L minus hoga.\n\n` +
-        `Agar ye sale daily reading me already included hai to pehle daily reading me credit amount add karein. Continue?`
+        `Agar ye sale daily reading me already included hai to pehle daily reading me total Cash in Hand/credit check karein. Continue?`
       );
+      return { ok, deductStock:true, linked:false };
     }
 
     const nextAmount = b.assignedAmount + amount;
@@ -207,19 +241,19 @@
     const overAmount = nextAmount - b.expectedAmount;
     const overLiters = nextLiters - b.expectedLiters;
 
-    if(overAmount > amountTol || (b.expectedLiters > 0 && overLiters > literTol)){
+    if(overAmount > amountTol || (!b.combinedMode && b.expectedLiters > 0 && overLiters > literTol)){
       alert(
         `Credit sale daily reading se zyada ho rahi hai. Save block kar diya gaya.\n\n` +
-        `Date/Fuel: ${saleDate} / ${fuelType}\n` +
-        `Daily credit expected: Rs.${fmt(b.expectedAmount)} (${b.expectedLiters.toFixed(3)} L)\n` +
-        `Already assigned: Rs.${fmt(b.assignedAmount)} (${b.assignedLiters.toFixed(3)} L)\n` +
+        `Date: ${saleDate}${b.combinedMode ? ' (Petrol + Diesel combined cash)' : ' / '+fuelType}\n` +
+        `Daily credit expected: Rs.${fmt(b.expectedAmount)}${b.combinedMode ? '' : ' ('+b.expectedLiters.toFixed(3)+' L)'}\n` +
+        `Already assigned: Rs.${fmt(b.assignedAmount)}${b.combinedMode ? '' : ' ('+b.assignedLiters.toFixed(3)+' L)'}\n` +
         `New entry: Rs.${fmt(amount)} (${liters.toFixed(3)} L)\n\n` +
-        `Pehle daily reading ka credit amount check karein ya transaction liters/amount correct karein.`
+        `Pehle daily reading ka cash/credit amount check karein ya transaction amount correct karein.`
       );
-      return false;
+      return { ok:false, deductStock:true, linked:false };
     }
 
-    return true;
+    return { ok:true, deductStock: !b.combinedMode, linked:true, combinedMode: b.combinedMode };
   }
 
   function showToast(type, title, msg) {
@@ -854,14 +888,15 @@ ${bodyHtml}
       const oldBal=parseFloat(cust.balance)||0;
       const createdAt = new Date(saleDate + 'T12:00:00').toISOString();
 
+      let stockDecision = { ok:true, deductStock:true, linked:false };
       if(paymentType !== 'cash'){
-        const okDailyCredit = await validateCreditAgainstDailyReading({
+        stockDecision = await validateCreditAgainstDailyReading({
           saleDate,
           fuelType,
           amountToAdd: amount,
           litersToAdd: liters
         });
-        if(!okDailyCredit) return;
+        if(!stockDecision.ok) return;
       }
 
       // balance < 0 means customer already has advance/Jama deposited with pump.
@@ -900,8 +935,8 @@ ${bodyHtml}
         }
         await supabase.from('customers').update({balance:newBal}).eq('id',cust.id);
         const lc=allCustomers.find(c=>c.id==cust.id); if(lc) lc.balance=newBal;
-        await reduceTankForSale(fuelType, liters);
-        showToast('success','Kamyab!',`${fuelType} sale save ho gayi. Advance used Rs.${fmt(advanceUsed)}${remainingCredit>0?', Credit Rs.'+fmt(remainingCredit):''}. New balance Rs.${fmt(newBal)}`);
+        if(stockDecision.deductStock) await reduceTankForSale(fuelType, liters);
+        showToast('success','Kamyab!',`${fuelType} sale save ho gayi. Advance used Rs.${fmt(advanceUsed)}${remainingCredit>0?', Credit Rs.'+fmt(remainingCredit):''}. New balance Rs.${fmt(newBal)}${stockDecision.deductStock?'':' — stock daily reading se already minus hai'}`);
         closeModal('newSaleModal'); selectedCustomers.sale=null;
         await loadCustomers(); await loadTransactions();
         return;
@@ -924,9 +959,9 @@ ${bodyHtml}
         await supabase.from('customers').update({balance:newBal}).eq('id',cust.id);
         const lc=allCustomers.find(c=>c.id==cust.id); if(lc) lc.balance=newBal;
       }
-      await reduceTankForSale(fuelType, liters);
+      if(paymentType === 'cash' || stockDecision.deductStock) await reduceTankForSale(fuelType, liters);
       const dateLabel = saleDate === new Date().toISOString().split('T')[0] ? '' : ` (${saleDate})`;
-      showToast('success','Kamyab!',`${fuelType} Sale Rs.${fmt(amount)} record ho gayi!${dateLabel}`);
+      showToast('success','Kamyab!',`${fuelType} Sale Rs.${fmt(amount)} record ho gayi!${dateLabel}${paymentType !== 'cash' && !stockDecision.deductStock ? ' — stock daily reading se already minus hai' : ''}`);
       closeModal('newSaleModal'); selectedCustomers.sale=null;
       await loadCustomers(); await loadTransactions();
     }catch(e){ alert('Sale Error: '+e.message); }

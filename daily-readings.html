@@ -264,6 +264,22 @@
             </div>
           </div>
 
+          <div class="alert alert-info border-0" style="background:#eef7ff;">
+            <div class="row g-3 align-items-end">
+              <div class="col-md-5">
+                <label class="form-label fw-semibold mb-1">Total Cash in Hand (Petrol + Diesel)</label>
+                <input type="number" id="add-combined-cash" class="form-control" step="0.01"
+                  placeholder="Aaj ka total cash received" oninput="DR.recalcAll()">
+                <small class="text-muted">Petrol aur Diesel ka cash mix ho to yahan total cash likhein.</small>
+              </div>
+              <div class="col-md-7">
+                <div class="small text-muted">System rule</div>
+                <div class="fw-semibold">Total Gross Sale − Total Cash in Hand = Auto Credit / Udhaar</div>
+                <small class="text-muted">Stock daily machine total liters se minus hoga; customer credit entry sirf khata manage karegi.</small>
+              </div>
+            </div>
+          </div>
+
           <div id="petrol-machines-wrap"></div>
           <button type="button" class="btn btn-sm btn-outline-success mb-3 no-print"
             onclick="DR.addMachine('Petrol')">
@@ -278,16 +294,20 @@
 
           <div id="grand-total-box" class="alert alert-success" style="display:none;">
             <div class="row text-center">
-              <div class="col-4">
+              <div class="col-3">
                 <div class="small text-muted">Total Liters</div>
                 <div class="fw-bold fs-5" id="gt-liters">0</div>
               </div>
-              <div class="col-4">
+              <div class="col-3">
                 <div class="small text-muted">Gross Sale</div>
                 <div class="fw-bold fs-5" id="gt-gross">Rs. 0</div>
               </div>
-              <div class="col-4">
-                <div class="small text-muted">✅ Net Cash Sale</div>
+              <div class="col-3">
+                <div class="small text-muted">Auto Credit</div>
+                <div class="fw-bold fs-5 text-danger" id="gt-credit">Rs. 0</div>
+              </div>
+              <div class="col-3">
+                <div class="small text-muted">✅ Cash in Hand</div>
                 <div class="fw-bold fs-5 text-success" id="gt-cash">Rs. 0</div>
               </div>
             </div>
