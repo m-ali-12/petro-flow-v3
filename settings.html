@@ -23,10 +23,10 @@
         <h5 class="mb-0"><i class="bi bi-tag me-2"></i>Fuel Prices</h5>
       </div>
       <div class="card-body">
-        <p class="text-muted">Set current fuel prices per liter. Old transactions will keep their original prices.</p>
+        <p class="text-muted">Set current fuel prices per liter with flexible 7, 15, or 30-day validity. Old transactions will keep their original prices.</p>
         
         <div class="row g-3 mb-3">
-          <div class="col-md-4">
+          <div class="col-md-3">
             <label class="form-label">Petrol Price (per liter) *</label>
             <div class="input-group">
               <span class="input-group-text">Rs.</span>
@@ -34,7 +34,7 @@
             </div>
             <small class="text-muted">Current: Rs. <span id="current-petrol-price">0</span></small>
           </div>
-          <div class="col-md-4">
+          <div class="col-md-3">
             <label class="form-label">Diesel Price (per liter) *</label>
             <div class="input-group">
               <span class="input-group-text">Rs.</span>
@@ -45,12 +45,21 @@
           <div class="col-md-2">
             <label class="form-label">Start Date *</label>
             <input id="price-start-date" class="form-control" type="date" required>
-            <small class="text-muted">From</small>
+            <small class="text-muted">From any date</small>
           </div>
           <div class="col-md-2">
-            <label class="form-label">End Date</label>
-            <input id="price-end-date" class="form-control" type="date">
-            <small class="text-muted">Leave blank if current</small>
+            <label class="form-label">Validity *</label>
+            <select id="price-validity-days" class="form-select">
+              <option value="7">7 Days</option>
+              <option value="15" selected>15 Days</option>
+              <option value="30">30 Days</option>
+            </select>
+            <small class="text-muted">Auto end date</small>
+          </div>
+          <div class="col-md-2">
+            <label class="form-label">End Date *</label>
+            <input id="price-end-date" class="form-control" type="date" required>
+            <small class="text-muted">7/15/30 days allowed</small>
           </div>
         </div>
 
@@ -67,10 +76,10 @@
         <h5 class="mb-0"><i class="bi bi-droplet-half me-2"></i>Mobil Oil Prices</h5>
       </div>
       <div class="card-body">
-        <p class="text-muted">Set current mobil oil prices per liter</p>
+        <p class="text-muted">Set current mobil oil prices per liter with flexible 7, 15, or 30-day validity</p>
         
         <div class="row g-3 mb-3">
-          <div class="col-md-4">
+          <div class="col-md-3">
             <label class="form-label">Car Mobil Price (per liter) *</label>
             <div class="input-group">
               <span class="input-group-text">Rs.</span>
@@ -78,7 +87,7 @@
             </div>
             <small class="text-muted">Current: Rs. <span id="current-car-mobil-price">0</span></small>
           </div>
-          <div class="col-md-4">
+          <div class="col-md-3">
             <label class="form-label">Open Mobil Price (per liter) *</label>
             <div class="input-group">
               <span class="input-group-text">Rs.</span>
@@ -89,12 +98,21 @@
           <div class="col-md-2">
             <label class="form-label">Start Date *</label>
             <input id="mobil-start-date" class="form-control" type="date" required>
-            <small class="text-muted">From</small>
+            <small class="text-muted">From any date</small>
           </div>
           <div class="col-md-2">
-            <label class="form-label">End Date</label>
-            <input id="mobil-end-date" class="form-control" type="date">
-            <small class="text-muted">Leave blank if current</small>
+            <label class="form-label">Validity *</label>
+            <select id="mobil-validity-days" class="form-select">
+              <option value="7">7 Days</option>
+              <option value="15" selected>15 Days</option>
+              <option value="30">30 Days</option>
+            </select>
+            <small class="text-muted">Auto end date</small>
+          </div>
+          <div class="col-md-2">
+            <label class="form-label">End Date *</label>
+            <input id="mobil-end-date" class="form-control" type="date" required>
+            <small class="text-muted">7/15/30 days allowed</small>
           </div>
         </div>
 

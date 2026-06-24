@@ -41,6 +41,7 @@
   async function init() {
     console.log('⚙️ Settings Page Initializing...');
     await loadSettings();
+    bindPricePeriodControls();
     await loadCounts();
   }
 
@@ -74,18 +75,14 @@
       if ($('car-mobil-price')) $('car-mobil-price').value = data.car_mobil_price || '';
       if ($('open-mobil-price')) $('open-mobil-price').value = data.open_mobil_price || '';
 
-      // Price period defaults: 1-15 or 16-month end
-      const now = new Date();
-      const y = now.getFullYear();
-      const m = String(now.getMonth() + 1).padStart(2, '0');
-      const last = new Date(y, now.getMonth() + 1, 0).getDate();
-      const firstHalf = now.getDate() <= 15;
-      const startDefault = `${y}-${m}-${firstHalf ? '01' : '16'}`;
-      const endDefault = `${y}-${m}-${String(firstHalf ? 15 : last).padStart(2,'0')}`;
+      // Price period defaults: flexible 7 / 15 / 30 days from selected start date
+      const startDefault = toDateInputValue(new Date());
+      if ($('price-validity-days')) $('price-validity-days').value = '15';
+      if ($('mobil-validity-days')) $('mobil-validity-days').value = '15';
       if ($('price-start-date')) $('price-start-date').value = startDefault;
-      if ($('price-end-date')) $('price-end-date').value = endDefault;
       if ($('mobil-start-date')) $('mobil-start-date').value = startDefault;
-      if ($('mobil-end-date')) $('mobil-end-date').value = endDefault;
+      updateEndDateFromPeriod('price');
+      updateEndDateFromPeriod('mobil');
 
       // Update time
       if ($('fuel-price-update-time')) {
@@ -135,25 +132,54 @@
     } catch (e) {}
   }
 
+  function bindPricePeriodControls() {
+    if (window.__pricePeriodControlsBound) return;
+    window.__pricePeriodControlsBound = true;
+    ['price', 'mobil'].forEach(prefix => {
+      const startEl = $(prefix + '-start-date');
+      const daysEl = $(prefix + '-validity-days');
+      if (startEl) startEl.addEventListener('change', () => updateEndDateFromPeriod(prefix));
+      if (daysEl) daysEl.addEventListener('change', () => updateEndDateFromPeriod(prefix));
+    });
+  }
+
   // ── Rendering History ────────────────────────────────────────
   let editingFuelIndex = null;
   let editingMobilIndex = null;
 
   function asDate(d) { return new Date(String(d || '') + 'T00:00:00'); }
-  function lastDayOfMonth(dateStr) {
+  function toDateInputValue(dateObj) {
+    const y = dateObj.getFullYear();
+    const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const d = String(dateObj.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  function addDays(dateStr, daysToAdd) {
     const d = asDate(dateStr);
-    return new Date(d.getFullYear(), d.getMonth()+1, 0).getDate();
+    d.setDate(d.getDate() + Number(daysToAdd || 0));
+    return toDateInputValue(d);
+  }
+  function inclusiveDays(startDate, endDate) {
+    const ms = asDate(endDate).getTime() - asDate(startDate).getTime();
+    return Math.floor(ms / 86400000) + 1;
+  }
+  function updateEndDateFromPeriod(prefix) {
+    const startEl = $(prefix + '-start-date');
+    const daysEl = $(prefix + '-validity-days');
+    const endEl = $(prefix + '-end-date');
+    if (!startEl || !daysEl || !endEl || !startEl.value) return;
+    const days = parseInt(daysEl.value || '15', 10);
+    if (![7, 15, 30].includes(days)) return;
+    endEl.value = addDays(startEl.value, days - 1);
   }
 
-  function validateHalfMonth(startDate, endDate) {
-    if (!startDate || !endDate) return 'Start date aur end date dono required hain. Fuel/Mobil rate ko 1-15 ya 16-month end range me save karein.';
+  function validateFlexiblePriceRange(startDate, endDate, selectedDays) {
+    if (!startDate || !endDate) return 'Start date aur end date dono required hain. Validity 7, 15 ya 30 days select karein.';
     if (asDate(endDate) < asDate(startDate)) return 'End date start date se pehle nahi ho sakti.';
-    const s = asDate(startDate), e = asDate(endDate);
-    if (s.getFullYear() !== e.getFullYear() || s.getMonth() !== e.getMonth()) return 'Rate range same month ke andar honi chahiye.';
-    const sd = s.getDate(), ed = e.getDate(), last = lastDayOfMonth(startDate);
-    const okFirst = sd === 1 && ed === 15;
-    const okSecond = sd === 16 && ed === last;
-    if (!okFirst && !okSecond) return `Valid ranges sirf 1-15 ya 16-${last} hain.`;
+    const days = inclusiveDays(startDate, endDate);
+    const allowed = [7, 15, 30];
+    if (!allowed.includes(days)) return `Rate range ${days} days ka ban raha hai. Sirf 7, 15 ya 30 days allowed hain.`;
+    if (selectedDays && Number(selectedDays) !== days) return `Selected validity ${selectedDays} days hai, lekin date range ${days} days ka hai. End date auto set karein ya validity change karein.`;
     return null;
   }
 
@@ -236,7 +262,8 @@
       showToast('Please fill prices, start date and end date.', 'warning');
       return;
     }
-    const rangeError = validateHalfMonth(startDate, endDate);
+    const selectedDays = parseInt($('price-validity-days')?.value || '15', 10);
+    const rangeError = validateFlexiblePriceRange(startDate, endDate, selectedDays);
     if (rangeError) { showToast(rangeError, 'warning'); return; }
 
     try {
@@ -246,7 +273,7 @@
         return;
       }
       const user = window.currentUserProfile?.full_name || 'Admin';
-      const newEntry = { date: startDate, start_date: startDate, end_date: endDate, petrol, diesel, updated_by: user, updated_at: new Date().toISOString() };
+      const newEntry = { date: startDate, start_date: startDate, end_date: endDate, validity_days: selectedDays, petrol, diesel, updated_by: user, updated_at: new Date().toISOString() };
       if (editingFuelIndex !== null && history[editingFuelIndex]) history[editingFuelIndex] = newEntry;
       else history.push(newEntry);
 
@@ -258,7 +285,7 @@
       localStorage.setItem('fuel_prices', JSON.stringify({ Petrol: latest.petrol, Diesel: latest.diesel }));
       window.config = window.config || {};
       window.config.FUEL_PRICES = { Petrol: latest.petrol, Diesel: latest.diesel };
-      showToast('✅ Fuel prices saved with valid 15-day/month-end range!');
+      showToast(`✅ Fuel prices saved with ${selectedDays}-day validity!`);
       await loadSettings();
     } catch (e) {
       console.error(e);
@@ -274,6 +301,8 @@
     $('diesel-price').value = h.diesel || '';
     $('price-start-date').value = h.start_date || h.date || '';
     $('price-end-date').value = h.end_date || '';
+    const fuelDays = h.validity_days || (h.end_date ? inclusiveDays(h.start_date || h.date, h.end_date) : 15);
+    if ($('price-validity-days')) $('price-validity-days').value = [7,15,30].includes(Number(fuelDays)) ? String(fuelDays) : '15';
     showToast('Fuel history entry edit mode mein aa gayi. Changes karke Save Fuel Prices press karein.', 'warning');
   };
 
@@ -299,7 +328,8 @@
       showToast('Please fill mobil prices, start date and end date.', 'warning');
       return;
     }
-    const rangeError = validateHalfMonth(startDate, endDate);
+    const selectedDays = parseInt($('mobil-validity-days')?.value || '15', 10);
+    const rangeError = validateFlexiblePriceRange(startDate, endDate, selectedDays);
     if (rangeError) { showToast(rangeError, 'warning'); return; }
 
     try {
@@ -309,7 +339,7 @@
         return;
       }
       const user = window.currentUserProfile?.full_name || 'Admin';
-      const newEntry = { date: startDate, start_date: startDate, end_date: endDate, car, open, updated_by: user, updated_at: new Date().toISOString() };
+      const newEntry = { date: startDate, start_date: startDate, end_date: endDate, validity_days: selectedDays, car, open, updated_by: user, updated_at: new Date().toISOString() };
       if (editingMobilIndex !== null && history[editingMobilIndex]) history[editingMobilIndex] = newEntry;
       else history.push(newEntry);
 
@@ -317,7 +347,7 @@
       const { error } = await upsertSettings({ car_mobil_price: latest.car, open_mobil_price: latest.open, mobil_history: history });
       if (error) throw error;
       editingMobilIndex = null;
-      showToast('✅ Mobil prices saved with valid 15-day/month-end range!');
+      showToast(`✅ Mobil prices saved with ${selectedDays}-day validity!`);
       await loadSettings();
     } catch (e) {
       console.error(e);
@@ -333,6 +363,8 @@
     $('open-mobil-price').value = h.open || '';
     $('mobil-start-date').value = h.start_date || h.date || '';
     $('mobil-end-date').value = h.end_date || '';
+    const mobilDays = h.validity_days || (h.end_date ? inclusiveDays(h.start_date || h.date, h.end_date) : 15);
+    if ($('mobil-validity-days')) $('mobil-validity-days').value = [7,15,30].includes(Number(mobilDays)) ? String(mobilDays) : '15';
     showToast('Mobil history entry edit mode mein aa gayi. Changes karke Save Mobil Prices press karein.', 'warning');
   };
 
