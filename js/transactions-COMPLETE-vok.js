@@ -288,11 +288,20 @@
     searchEl.style.border = `2px solid ${color}`;
 
     function renderList(q) {
-      const filtered = q
+      let filtered = q
         ? opts.customers.filter(c =>
             c.name.toLowerCase().includes(q.toLowerCase()) ||
-            String(c.sr_no||'').includes(q))
+            String(c.sr_no||'').includes(q) ||
+            String(c.category||'').toLowerCase().includes(q.toLowerCase()))
         : opts.customers;
+      if(opts.key === 'expense') {
+        filtered = [...filtered].sort((a,b) => {
+          const ao = String(a.category||'').toLowerCase().includes('owner') ? 0 : 1;
+          const bo = String(b.category||'').toLowerCase().includes('owner') ? 0 : 1;
+          if(ao !== bo) return ao - bo;
+          return (parseInt(a.sr_no)||9999) - (parseInt(b.sr_no)||9999);
+        });
+      }
 
       if(!filtered.length){
         listEl.innerHTML = `<div style="padding:12px;color:#888;text-align:center;font-size:13px;">Koi nahi mila</div>`;
@@ -308,7 +317,7 @@
           <span>
             <span style="background:${color};color:#fff;border-radius:4px;
               padding:1px 7px;font-size:11px;font-weight:700;margin-right:8px;">#${c.sr_no||'-'}</span>
-            ${c.name}
+            ${c.name} ${String(c.category||'').toLowerCase().includes('owner')?'<small style="color:#e67e22;font-weight:700;">(Owner)</small>':''}
           </span>
           <span style="font-size:12px;font-weight:700;color:${bal>0?'#dc3545':'#198754'};">
             ${khataLabel(bal)}
@@ -337,6 +346,9 @@
           }
           if(boxEl) boxEl.style.display = 'flex';
           searchEl.style.display = 'none';
+          if(opts.key === 'expense') setTimeout(() => {
+            if(window.refreshOwnerExpenseSummary) window.refreshOwnerExpenseSummary();
+          }, 80);
         });
       });
     }
@@ -351,6 +363,9 @@
       searchEl.value = ''; searchEl.style.display = 'block';
       if(boxEl) boxEl.style.display = 'none';
       listEl.style.display = 'none';
+      if(opts.key === 'expense') setTimeout(() => {
+        if(window.refreshOwnerExpenseSummary) window.refreshOwnerExpenseSummary();
+      }, 80);
       searchEl.focus();
     };
 
@@ -1002,6 +1017,156 @@ ${bodyHtml}
     }catch(e){ alert('Vasooli Error: '+e.message); }
   }
 
+
+  function ownerExpenseAccounts(){
+    return (allCustomers || [])
+      .filter(c => String(c.category || '').toLowerCase().includes('owner'))
+      .sort((a,b) => (parseInt(a.sr_no)||9999) - (parseInt(b.sr_no)||9999));
+  }
+
+  function monthRangeFromValue(monthVal){
+    const safe = monthVal || new Date().toISOString().slice(0,7);
+    const [y,m] = safe.split('-').map(Number);
+    const start = `${safe}-01T00:00:00`;
+    const next = new Date(y, m, 1);
+    const end = `${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}-01T00:00:00`;
+    return { month: safe, start, end };
+  }
+
+  function renderOwnerExpenseQuickList(){
+    const box = el('owner-expense-quick-list');
+    if(!box) return;
+    const owners = ownerExpenseAccounts();
+    if(!owners.length){
+      box.innerHTML = '<span class="text-danger small">Owner accounts nahi mile. Customers page par category Owner check karein.</span>';
+      return;
+    }
+    box.innerHTML = owners.map(o => {
+      const bal = parseFloat(o.balance) || 0;
+      const cls = selectedCustomers.expense && String(selectedCustomers.expense.id) === String(o.id) ? 'btn-warning' : 'btn-outline-warning';
+      return `<button type="button" class="btn btn-sm ${cls}" onclick="window.selectOwnerForExpense(${o.id})" title="${khataLabel(bal)}">#${o.sr_no||'-'} ${o.name}</button>`;
+    }).join('');
+  }
+
+  window.selectOwnerForExpense = function(ownerId){
+    const cust = allCustomers.find(c => String(c.id) === String(ownerId));
+    if(!cust) return;
+    selectedCustomers.expense = cust;
+    const hiddenEl = el('expense-customer-hidden');
+    const searchEl = el('expense-cust-search');
+    const listEl = el('expense-cust-list');
+    const boxEl = el('expense-cust-selected');
+    const textEl = el('expense-cust-selected-text');
+    const balEl = el('expense-cust-balance');
+    if(hiddenEl) hiddenEl.value = cust.id;
+    if(searchEl){ searchEl.value = ''; searchEl.style.display = 'none'; }
+    if(listEl) listEl.style.display = 'none';
+    if(textEl) textEl.textContent = `#${cust.sr_no||'-'} — ${cust.name}`;
+    if(balEl){
+      const b = parseFloat(cust.balance)||0;
+      balEl.textContent = khataLabel(b);
+      balEl.style.color = b > 0 ? '#dc3545' : '#198754';
+    }
+    if(boxEl) boxEl.style.display = 'flex';
+    renderOwnerExpenseQuickList();
+    window.refreshOwnerExpenseSummary();
+  };
+
+  async function getOwnerMonthlyExpenseSummary(ownerId, monthVal){
+    const {month, start, end} = monthRangeFromValue(monthVal);
+    const {data,error}=await supabase
+      .from('transactions')
+      .select('id,transaction_type,amount,charges,description,created_at')
+      .eq('customer_id', ownerId)
+      .gte('created_at', start)
+      .lt('created_at', end)
+      .order('created_at', {ascending:true});
+    if(error) throw error;
+    const rows = data || [];
+    const expense = rows
+      .filter(t => t.transaction_type === 'Expense')
+      .reduce((sum,t)=>sum+(parseFloat(t.charges ?? t.amount)||0),0);
+    const cleared = rows
+      .filter(t => t.transaction_type === 'Debit' && String(t.description||'').includes(`Owner Expense Monthly Clear: ${month}`))
+      .reduce((sum,t)=>sum+(parseFloat(t.charges ?? t.amount)||0),0);
+    const pending = Math.max(0, expense - cleared);
+    return {month, rows, expense, cleared, pending};
+  }
+
+  window.refreshOwnerExpenseSummary = async function(){
+    renderOwnerExpenseQuickList();
+    const box = el('owner-expense-summary-box');
+    if(!box) return;
+    const monthEl = el('owner-expense-month');
+    const dateEl = el('expense-date');
+    if(monthEl && !monthEl.value){
+      const baseDate = dateEl?.value || new Date().toISOString().split('T')[0];
+      monthEl.value = baseDate.slice(0,7);
+    }
+    const cust = selectedCustomers.expense;
+    if(!cust){
+      box.innerHTML = '<span class="text-muted">Owner account select karne ke baad monthly total, clear amount aur current balance yahan show hoga.</span>';
+      return;
+    }
+    if(!String(cust.category||'').toLowerCase().includes('owner')){
+      box.innerHTML = `<span class="text-muted">Selected account owner category ka nahi hai. Expense save ho sakta hai, lekin monthly owner clear summary sirf Owner accounts ke liye hai.</span>`;
+      return;
+    }
+    try{
+      box.innerHTML = '<span class="text-muted"><span class="spinner-border spinner-border-sm me-1"></span>Calculating owner monthly total...</span>';
+      const summary = await getOwnerMonthlyExpenseSummary(cust.id, monthEl?.value);
+      const bal = parseFloat(cust.balance)||0;
+      const clearable = Math.min(summary.pending, Math.max(0, bal));
+      box.innerHTML = `
+        <div class="row g-2 mt-1">
+          <div class="col-6 col-md-3"><div class="p-2 bg-white rounded border"><div class="text-muted">Month Expense</div><strong class="text-danger">Rs.${fmt(summary.expense)}</strong></div></div>
+          <div class="col-6 col-md-3"><div class="p-2 bg-white rounded border"><div class="text-muted">Already Clear</div><strong class="text-success">Rs.${fmt(summary.cleared)}</strong></div></div>
+          <div class="col-6 col-md-3"><div class="p-2 bg-white rounded border"><div class="text-muted">Month Pending</div><strong class="text-warning">Rs.${fmt(summary.pending)}</strong></div></div>
+          <div class="col-6 col-md-3"><div class="p-2 bg-white rounded border"><div class="text-muted">Current Balance</div><strong style="color:${bal>0?'#dc3545':'#198754'};">${khataLabel(bal)}</strong></div></div>
+        </div>
+        <div class="mt-2 small ${clearable>0?'text-muted':'text-warning'}">
+          Clear button se Rs.${fmt(clearable)} ki vasooli/debit entry banegi aur owner balance kam hoga. Old entries delete nahi hongi.
+        </div>`;
+    }catch(e){
+      box.innerHTML = `<span class="text-danger">Owner monthly total calculate nahi hua: ${e.message}</span>`;
+    }
+  };
+
+  window.clearOwnerMonthlyExpense = async function(){
+    const cust = selectedCustomers.expense;
+    if(!cust){ alert('Pehle owner account select karein'); return; }
+    if(!String(cust.category||'').toLowerCase().includes('owner')){ alert('Ye clear option sirf Owner accounts ke liye hai'); return; }
+    const monthEl = el('owner-expense-month');
+    try{
+      const summary = await getOwnerMonthlyExpenseSummary(cust.id, monthEl?.value);
+      const oldBal = parseFloat(cust.balance)||0;
+      const amount = Math.min(summary.pending, Math.max(0, oldBal));
+      if(amount <= 0){ alert('Is month ka pending ya owner current balance clear karne ke liye amount nahi hai.'); return; }
+      if(!confirm(`${cust.name} ka ${summary.month} monthly expense Rs.${fmt(amount)} clear/vasooli entry banani hai?`)) return;
+      const newBal = oldBal - amount;
+      const createdAt = new Date((el('expense-date')?.value || `${summary.month}-01`) + 'T12:00:00').toISOString();
+      await safeInsertTransaction({
+        customer_id: parseInt(cust.id),
+        transaction_type: 'Debit',
+        amount, charges: amount,
+        payment_method: 'Owner Expense Clear',
+        description: `Owner Expense Monthly Clear: ${summary.month}${balanceNote(oldBal, -amount, newBal)}`,
+        created_at: createdAt,
+        balance_before: oldBal, balance_after: newBal,
+        customer_balance_before: oldBal, customer_balance_after: newBal,
+        balance_effect: -amount
+      });
+      await supabase.from('customers').update({balance:newBal}).eq('id',cust.id);
+      const lc = allCustomers.find(c => String(c.id) === String(cust.id));
+      if(lc) lc.balance = newBal;
+      selectedCustomers.expense.balance = newBal;
+      showToast('success','Owner Expense Cleared',`${cust.name} ka Rs.${fmt(amount)} monthly total clear ho gaya!`);
+      await loadCustomers();
+      await loadTransactions();
+      if(window.selectOwnerForExpense) window.selectOwnerForExpense(cust.id);
+    }catch(e){ alert('Owner monthly clear error: '+e.message); }
+  };
+
   async function handleExpense(){
     const amount=parseFloat(el('expense-amount')?.value)||0;
     const description=el('expense-description')?.value||'';
@@ -1407,12 +1572,21 @@ ${adv.notes?`<div class="row"><span class="lbl">Notes</span><span class="val">${
       expDateEl.addEventListener('change', function(){
         const w = el('expense-date-warning');
         if(w) w.style.display = this.value && this.value < today ? 'block' : 'none';
+        const monthEl = el('owner-expense-month');
+        if(monthEl && this.value) monthEl.value = this.value.slice(0,7);
+        if(window.refreshOwnerExpenseSummary) window.refreshOwnerExpenseSummary();
       });
       el('expenseModal')?.addEventListener('show.bs.modal', ()=>{
         expDateEl.value = today;
+        const monthEl = el('owner-expense-month');
+        if(monthEl) monthEl.value = today.slice(0,7);
         const w = el('expense-date-warning'); if(w) w.style.display='none';
+        setTimeout(()=>{ if(window.refreshOwnerExpenseSummary) window.refreshOwnerExpenseSummary(); }, 150);
       });
     }
+    el('owner-expense-month')?.addEventListener('change', ()=>{
+      if(window.refreshOwnerExpenseSummary) window.refreshOwnerExpenseSummary();
+    });
   }
 
   async function init() {
