@@ -531,7 +531,7 @@
             <div class="col-md-4">
               <label class="form-label small fw-semibold">Gross Preview</label>
               <div class="form-control bg-light" id="${prefix}-gross-${num}" style="height:auto;min-height:38px;">Rs. 0.00</div>
-              <small class="text-muted">Cash total upar combined field me likhein</small>
+              <small class="text-muted">Cash yahan nahi — neeche total cash sirf 1 dafa likhein</small>
             </div>
             <div class="col-md-4">
               <label class="form-label small fw-semibold">Testing (L)</label>
@@ -540,7 +540,7 @@
             </div>
           </div>
           <div class="live-calc" id="calc-${cls}-${num}">
-            <span class="text-muted">Total liters enter karein — result yahan dikhega</span>
+            <span class="text-muted">Total liters enter karein — cash neeche sirf 1 dafa</span>
           </div>
         </div>
       </div>`;
@@ -602,7 +602,7 @@
         </div>
         <div class="col-4">
           <div class="small text-muted">Cash / Credit</div>
-          <div class="fw-bold text-muted">Combined cash se auto</div>
+          <div class="fw-bold text-muted">Neeche total cash se auto</div>
         </div>
       </div>`;
 

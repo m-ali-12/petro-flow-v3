@@ -265,19 +265,9 @@
           </div>
 
           <div class="alert alert-info border-0" style="background:#eef7ff;">
-            <div class="row g-3 align-items-end">
-              <div class="col-md-5">
-                <label class="form-label fw-semibold mb-1">Total Cash in Hand (Petrol + Diesel)</label>
-                <input type="number" id="add-combined-cash" class="form-control" step="0.01"
-                  placeholder="Aaj ka total cash received" oninput="DR.recalcAll()">
-                <small class="text-muted">Petrol aur Diesel ka cash mix ho to yahan total cash likhein.</small>
-              </div>
-              <div class="col-md-7">
-                <div class="small text-muted">System rule</div>
-                <div class="fw-semibold">Total Gross Sale − Total Cash in Hand = Auto Credit / Udhaar</div>
-                <small class="text-muted">Stock daily machine total liters se minus hoga; customer credit entry sirf khata manage karegi.</small>
-              </div>
-            </div>
+            <div class="small text-muted">System rule</div>
+            <div class="fw-semibold">Petrol + Diesel liters pehle enter karein. Cash in Hand sirf neeche final summary me aik dafa enter hoga.</div>
+            <small class="text-muted">Stock daily machine total liters se minus hoga; customer credit entry sirf khata manage karegi.</small>
           </div>
 
           <div id="petrol-machines-wrap"></div>
@@ -291,6 +281,22 @@
             onclick="DR.addMachine('Diesel')">
             <i class="bi bi-plus me-1"></i>Aur Diesel Machine
           </button>
+
+          <div class="alert alert-info border-0 mt-2" style="background:#eef7ff;">
+            <div class="row g-3 align-items-end">
+              <div class="col-md-5">
+                <label class="form-label fw-semibold mb-1">Total Cash in Hand (Petrol + Diesel) — Sirf 1 Dafa</label>
+                <input type="number" id="add-combined-cash" class="form-control" step="0.01"
+                  placeholder="Aaj ka total cash received" oninput="DR.recalcAll()">
+                <small class="text-muted">Petrol aur Diesel ka mixed cash total yahan sirf aik dafa likhein. Petrol/Diesel machines me cash repeat nahi karna.</small>
+              </div>
+              <div class="col-md-7">
+                <div class="small text-muted">Auto calculation</div>
+                <div class="fw-semibold">Total Gross Sale − Total Cash in Hand = Auto Credit / Udhaar</div>
+                <small class="text-muted">Agar cash blank chhor dein to system full gross ko cash sale treat karega.</small>
+              </div>
+            </div>
+          </div>
 
           <div id="grand-total-box" class="alert alert-success" style="display:none;">
             <div class="row text-center">
